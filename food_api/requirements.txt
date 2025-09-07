@@ -1,0 +1,5 @@
+fastapi[all]
+beanie
+motor
+passlib[bcrypt]
+python-jose[cryptography]
