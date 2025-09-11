@@ -2,7 +2,7 @@ import motor.motor_asyncio
 from beanie import init_beanie
 
 # Your actual connection string from Atlas
-MONGO_DATABASE_URL = "mongodb://localhost:27017/food_db.6z9sntm.mongodb.net/?retryWrites=true&w=majority&appName=FoodAPICluster"
+MONGO_DATABASE_URL = "mongodb+srv://foodapi_user:{{Password}}@foodapicluster.6z9sntm.mongodb.net/?retryWrites=true&w=majority&appName=FoodAPICluster"
 
 client = motor.motor_asyncio.AsyncIOMotorClient(
     MONGO_DATABASE_URL, uuidRepresentation="standard"
@@ -18,4 +18,5 @@ async def init_db():
             "app.models.Restaurant",
             "app.models.Order",
         ]
+
     )
