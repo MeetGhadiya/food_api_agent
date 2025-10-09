@@ -70,11 +70,5 @@ food_api_agent/
 
 The `food_api_agent` directory contains scripts for interacting with the API programmatically.
 
-## Contributing
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/YourFeature`)
-3. Commit your changes (`git commit -m 'Add some feature'`)
-4. Push to the branch (`git push origin feature/YourFeature`)
-5. Open a pull request
 
