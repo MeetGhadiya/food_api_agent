@@ -1,6 +1,7 @@
 # Import necessary modules from FastAPI and standard Python libraries
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import List
 from datetime import timedelta
@@ -36,6 +37,15 @@ async def lifespan(app: FastAPI):
 # Create the main FastAPI application instance
 # The lifespan manager is attached to handle startup/shutdown logic.
 app = FastAPI(title="Food Delivery API", lifespan=lifespan)
+
+# Add CORS middleware to allow requests from frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Public Endpoints (No Login Required) ---
 
