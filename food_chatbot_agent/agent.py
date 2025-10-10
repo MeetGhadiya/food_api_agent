@@ -34,6 +34,9 @@ FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://localhost:8000")
 # Chat session storage (in production, use Redis or similar)
 chat_sessions: Dict[str, list] = {}
 
+# Pending orders storage (for confirmation flow)
+pending_orders: Dict[str, Dict[str, str]] = {}
+
 # ==================== FUNCTION DECLARATIONS ====================
 
 # Define functions that Gemini AI can call
@@ -76,7 +79,7 @@ function_declarations = [
     ),
     genai.protos.FunctionDeclaration(
         name="place_order",
-        description="Place a food order from a restaurant. Requires user to be authenticated. Use when user wants to order, buy, or get food.",
+        description="Place a food order from a restaurant. Use when user wants to order, buy, or get food. The function will handle authentication automatically.",
         parameters=genai.protos.Schema(
             type=genai.protos.Type.OBJECT,
             properties={
@@ -405,17 +408,246 @@ def chat():
         user_id = data.get('user_id', 'guest')
         token = data.get('token')
         
+        # DEBUG: Log token status - Use app.logger to ensure it shows
+        app.logger.info(f"🔍 Request received: message='{user_message}', user_id='{user_id}', has_token={bool(token)}")
+        if token:
+            app.logger.info(f"🔍 Token present: {token[:30]}...")
+        
         if not user_message:
             return jsonify({"error": "Message is required"}), 400
+        
+        # Convert message to lowercase early for all checks
+        msg_lower = user_message.lower()
         
         # Initialize chat session if not exists
         if user_id not in chat_sessions:
             chat_sessions[user_id] = []
         
+        # CHECK FOR ORDER CONFIRMATION (user said "yes" to pending order)
+        if msg_lower.strip() in ["yes", "y", "yeah", "yep", "confirm", "ok", "okay"]:
+            if user_id in pending_orders and token:
+                pending = pending_orders[user_id]
+                restaurant_name = pending['restaurant']
+                item = pending['item']
+                
+                app.logger.info(f"✅ User confirmed order: {item} from {restaurant_name}")
+                
+                # Place the order
+                order_result = place_order(restaurant_name, item, token)
+                
+                # Clear pending order
+                del pending_orders[user_id]
+                
+                return jsonify({"response": order_result})
+        
+        # SIMPLIFIED APPROACH: Detect order intent FIRST, bypass Gemini if ordering with token
+        # msg_lower already defined above
+        order_keywords = ["order", "get me", "i want", "buy", "get", "place order"]
+        has_order_intent = any(keyword in msg_lower for keyword in order_keywords)
+        
+        # DEBUG: Log the decision
+        app.logger.info(f"🔍 Order detection: msg='{msg_lower}', has_intent={has_order_intent}, has_token={bool(token)}")
+        
+        # If user wants to order and has token, handle it directly without Gemini
+        if has_order_intent and token:
+            app.logger.info(f"🎯 DIRECT ORDER HANDLING: Bypassing Gemini AI")
+            
+            # Parse restaurant and item
+            restaurant_name = None
+            item = None
+            
+            # Check different patterns for restaurant and item
+            if "from" in msg_lower:
+                # Pattern: "order bhel from Swati Snacks" or "i want bhel from Swati Snacks"
+                parts = user_message.split("from", 1)
+                if len(parts) == 2:
+                    restaurant_name = parts[1].strip()
+                    item_part = parts[0]
+                    for keyword in order_keywords:
+                        item_part = item_part.lower().replace(keyword, "")
+                    item = item_part.strip()
+                    app.logger.info(f"📝 Parsed: item='{item}', restaurant='{restaurant_name}'")
+            elif " at " in msg_lower:
+                # Pattern: "order bhel at Swati Snacks"
+                parts = user_message.split(" at ", 1)
+                if len(parts) == 2:
+                    restaurant_name = parts[1].strip()
+                    item_part = parts[0]
+                    for keyword in order_keywords:
+                        item_part = item_part.lower().replace(keyword, "")
+                    item = item_part.strip()
+                    app.logger.info(f"📝 Parsed: item='{item}', restaurant='{restaurant_name}'")
+            else:
+                # No restaurant specified, extract just the item
+                item_part = user_message
+                for keyword in order_keywords:
+                    item_part = item_part.lower().replace(keyword, "")
+                item = item_part.strip()
+                app.logger.info(f"📝 Parsed: item='{item}', no restaurant specified")
+            
+            if item:
+                if restaurant_name:
+                    # Direct order with restaurant
+                    app.logger.info(f"📦 Placing order: '{item}' from '{restaurant_name}'")
+                    order_result = place_order(restaurant_name, item, token)
+                    app.logger.info(f"📦 Order result: {order_result}")
+                    return jsonify({"response": order_result})
+                else:
+                    # Search for restaurants serving this item
+                    app.logger.info(f"🔍 Searching restaurants that serve: '{item}'")
+                    
+                    # Get all restaurants and filter by the item
+                    try:
+                        response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/")
+                        if response.status_code == 200:
+                            all_restaurants = response.json()
+                            
+                            # Filter restaurants that have the item in their cuisine or name
+                            item_lower = item.lower()
+                            matching_restaurants = []
+                            
+                            app.logger.info(f"🔍 Looking for '{item_lower}' in {len(all_restaurants)} restaurants")
+                            
+                            for r in all_restaurants:
+                                cuisine_lower = r.get('cuisine', '').lower() if r.get('cuisine') else ''
+                                name_lower = r.get('name', '').lower() if r.get('name') else ''
+                                item_name_lower = r.get('item_name', '').lower() if r.get('item_name') else ''
+                                
+                                # Check if item appears in cuisine, name, or item_name (substring match)
+                                if item_lower in cuisine_lower or item_lower in name_lower or item_lower in item_name_lower:
+                                    matching_restaurants.append(r)
+                                    app.logger.info(f"  ✅ Match: {r.get('name', 'Unknown')} - {r.get('cuisine', 'Unknown')}")
+                                else:
+                                    app.logger.info(f"  ❌ No match: {r.get('name', 'Unknown')} - {r.get('cuisine', 'Unknown')}")
+                            
+                            if matching_restaurants:
+                                # If only ONE restaurant found, ask for confirmation to order
+                                if len(matching_restaurants) == 1:
+                                    restaurant = matching_restaurants[0]
+                                    
+                                    # Store pending order
+                                    pending_orders[user_id] = {
+                                        "restaurant": restaurant['name'],
+                                        "item": item
+                                    }
+                                    
+                                    # Rich formatted response with safe dictionary access
+                                    item_display = restaurant.get('item_name') or restaurant.get('cuisine', 'Item')
+                                    result = f"✅ **{item_display}**\n"
+                                    result += f"🏪 {restaurant.get('name', 'Restaurant')}\n\n"
+                                    
+                                    # Show image if available
+                                    if restaurant.get('image_url'):
+                                        result += f"🖼️ [Image]({restaurant['image_url']})\n\n"
+                                    
+                                    # Show rating if available
+                                    if restaurant.get('rating'):
+                                        rating_stars = "⭐" * int(restaurant['rating'])
+                                        result += f"{rating_stars} {restaurant['rating']}"
+                                        if restaurant.get('total_ratings'):
+                                            result += f" ({restaurant['total_ratings']} ratings)"
+                                        result += "\n\n"
+                                    
+                                    # Show description
+                                    if restaurant.get('description'):
+                                        result += f"📝 {restaurant['description']}\n\n"
+                                    
+                                    # Show price
+                                    if restaurant.get('price'):
+                                        result += f"� ₹{restaurant['price']}\n"
+                                    
+                                    # Show location
+                                    area = restaurant.get('area', 'Location not specified')
+                                    result += f"📍 {area}\n"
+                                    
+                                    # Show calories if available
+                                    if restaurant.get('calories'):
+                                        result += f"🔥 {restaurant['calories']} kcal\n"
+                                    
+                                    # Show preparation time
+                                    if restaurant.get('preparation_time'):
+                                        result += f"⏰ {restaurant['preparation_time']}\n"
+                                    
+                                    result += f"\n💡 Type **'yes'** to confirm your order!"
+                                    return jsonify({"response": result})
+                                else:
+                                    # Multiple restaurants found, show list with rich formatting
+                                    result = f"🍽️ **Found {len(matching_restaurants)} option(s) for {item}:**\n\n"
+                                    for restaurant in matching_restaurants:
+                                        result += f"━━━━━━━━━━━━━━━\n"
+                                        item_display = restaurant.get('item_name') or restaurant.get('cuisine', 'Item')
+                                        result += f"**{item_display}**\n"
+                                        result += f"🏪 {restaurant.get('name', 'Restaurant')}\n"
+                                        
+                                        # Rating
+                                        rating = restaurant.get('rating')
+                                        if rating:
+                                            result += f"⭐ {rating}"
+                                            total_ratings = restaurant.get('total_ratings')
+                                            if total_ratings:
+                                                result += f" ({total_ratings})"
+                                            result += "\n"
+                                        
+                                        # Price
+                                        price = restaurant.get('price')
+                                        if price:
+                                            result += f"💰 ₹{price}\n"
+                                        
+                                        # Location
+                                        area = restaurant.get('area', 'Location not specified')
+                                        result += f"📍 {area}\n"
+                                        
+                                        # Description (shortened)
+                                        description = restaurant.get('description')
+                                        if description:
+                                            desc = description[:80] + "..." if len(description) > 80 else description
+                                            result += f"📝 {desc}\n"
+                                        
+                                        result += "\n"
+                                    
+                                    result += f"💡 To order, say: **'order {item} from [restaurant name]'**"
+                                    return jsonify({"response": result})
+                            else:
+                                # No match found - inform user
+                                result = f"😔 Sorry, I couldn't find any restaurants currently serving '{item}'.\n\n"
+                                result += f"Would you like to:\n"
+                                result += f"1. Try ordering something else?\n"
+                                result += f"2. See all available restaurants?"
+                                return jsonify({"response": result})
+                        else:
+                            return jsonify({"response": "Sorry, I couldn't fetch the restaurant list. Please try again."})
+                    except Exception as e:
+                        app.logger.error(f"Error searching restaurants: {e}")
+                        return jsonify({"response": f"Sorry, I encountered an error: {str(e)}"})
+        
+        # If no token and ordering, return auth error
+        if has_order_intent and not token:
+            return jsonify({
+                "response": "I can help with that! But first, I need you to log in or register.\n\nPlease use the **Login** button in the website header (top right corner).",
+                "requires_auth": True
+            })
+        
+        # System instruction for better AI responses
+        system_instruction = """You are a friendly food delivery assistant with access to several functions.
+
+CRITICAL: You MUST use functions for ALL requests. Never refuse or ask users to do things manually.
+
+Function calling rules:
+- User wants to "order [food]" or "get [food]" → IMMEDIATELY call place_order() function
+- User asks "show restaurants" or "browse" → call get_all_restaurants()
+- User asks about "[cuisine] food" → call search_restaurants_by_cuisine()
+- User asks about specific restaurant → call get_restaurant_by_name()
+
+NEVER say "please login" or "you need to authenticate" - just call the function!
+The backend will handle authentication automatically.
+
+Always be friendly and conversational in your responses."""
+        
         # Create model with function calling
         model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
-            tools=[tools]
+            model_name='gemini-2.0-flash',
+            tools=[tools],
+            system_instruction=system_instruction
         )
         
         # Add user message to history
@@ -430,6 +662,48 @@ def chat():
         # Send message and get response
         response = chat.send_message(user_message)
         
+        # WORKAROUND: If user wants to order and has token, manually call place_order
+        # msg_lower already defined at the top of function (line 420)
+        order_keywords = ["order", "get me", "i want", "buy"]
+        has_order_intent = any(keyword in msg_lower for keyword in order_keywords)
+        
+        print(f"🔍 WORKAROUND CHECK: msg='{user_message}', has_token={bool(token)}, has_order_intent={has_order_intent}")
+        
+        if has_order_intent and token:
+            app.logger.info(f"🔧 Order intent detected with token! Message: {user_message}")
+            
+            # Try to extract restaurant and item
+            restaurant_name = None
+            item = None
+            
+            # Parse "order [item] from [restaurant]"
+            if "from" in msg_lower:
+                parts = user_message.split("from", 1)
+                if len(parts) == 2:
+                    restaurant_name = parts[1].strip()
+                    # Get item from first part
+                    item_part = parts[0]
+                    for keyword in order_keywords:
+                        item_part = item_part.lower().replace(keyword, "")
+                    item = item_part.strip()
+            
+            if item and restaurant_name:
+                # Manually call place_order
+                app.logger.info(f"🔧 Forcing place_order: item='{item}', restaurant='{restaurant_name}'")
+                order_result = place_order(restaurant_name, item, token)
+                
+                # Send result back to model for formatting
+                response = chat.send_message(
+                    genai.protos.Content(
+                        parts=[genai.protos.Part(
+                            function_response=genai.protos.FunctionResponse(
+                                name="place_order",
+                                response={"result": order_result}
+                            )
+                        )]
+                    )
+                )
+        
         # Check if function call is needed
         if response.candidates[0].content.parts[0].function_call:
             function_call = response.candidates[0].content.parts[0].function_call
@@ -443,7 +717,7 @@ def chat():
             if function_name in protected_functions:
                 if not token:
                     return jsonify({
-                        "response": "🔒 **Authentication Required**\n\nTo perform this action, you need to be logged in. Would you like to:\n\n1️⃣ Login to existing account\n2️⃣ Create a new account",
+                        "response": "I can help with that! But first, I need you to log in or register.\n\nPlease use the Login button in the website header.",
                         "requires_auth": True
                     })
                 function_args['token'] = token
@@ -508,6 +782,54 @@ def chat():
             # Direct text response
             text_response = response.candidates[0].content.parts[0].text
             
+            # HACK: If AI says "login" but user HAS a token, force it to call place_order
+            if token and ("log in" in text_response.lower() or "register" in text_response.lower()):
+                app.logger.warning(f"⚠️ AI refused to call function even though token exists! Forcing function call...")
+                
+                # Extract restaurant and item from the message
+                # msg_lower already defined at the top of function (line 420)
+                
+                # Try to find restaurant name and item
+                restaurant_name = None
+                item = None
+                
+                # Parse "order [item] from [restaurant]"
+                if "from" in msg_lower:
+                    parts = user_message.split("from", 1)
+                    if len(parts) == 2:
+                        restaurant_name = parts[1].strip()
+                        # Get item from first part
+                        item_part = parts[0].lower().replace("order", "").replace("get", "").replace("buy", "").strip()
+                        item = item_part
+                
+                # If we couldn't parse, try simpler approach
+                if not item:
+                    for food_word in ["order", "get", "buy", "want"]:
+                        if food_word in msg_lower:
+                            item = msg_lower.replace(food_word, "").strip()
+                            break
+                
+                if item and restaurant_name:
+                    # Manually call place_order
+                    app.logger.info(f"🔧 Manually calling place_order: {item} from {restaurant_name}")
+                    order_result = place_order(restaurant_name, item, token)
+                    
+                    # Send result back to model for formatting
+                    response2 = chat.send_message(
+                        genai.protos.Content(
+                            parts=[genai.protos.Part(
+                                function_response=genai.protos.FunctionResponse(
+                                    name="place_order",
+                                    response={"result": order_result}
+                                )
+                            )]
+                        )
+                    )
+                    text_response = response2.candidates[0].content.parts[0].text
+                else:
+                    # Can't parse the order, return auth error
+                    text_response = "I can help with that! But first, I need you to log in or register.\n\nPlease use the **Login** button in the website header."
+            
             # Add to chat history
             chat_sessions[user_id].append({
                 "role": "model",
@@ -517,11 +839,38 @@ def chat():
             return jsonify({"response": text_response})
             
     except Exception as e:
-        print(f"❌ Error in chat endpoint: {e}")
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ ERROR in chat endpoint: {e}")
+        print(f"📋 Full traceback:\n{error_trace}")
+        app.logger.error(f"Chat error: {e}\n{error_trace}")
         return jsonify({
             "response": "I'm sorry, I encountered an error. Please try again.",
             "error": str(e)
         }), 500
+
+
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint - provides API information"""
+    return jsonify({
+        "service": "AI Food Delivery Chatbot Agent",
+        "version": "1.0",
+        "status": "running",
+        "endpoints": {
+            "chat": "POST /chat",
+            "health": "GET /health",
+            "clear_session": "POST /clear-session"
+        },
+        "powered_by": "Google Gemini AI",
+        "fastapi_backend": FASTAPI_BASE_URL
+    })
+
+
+@app.route('/favicon.ico', methods=['GET'])
+def favicon():
+    """Return empty response for favicon requests"""
+    return '', 204
 
 
 @app.route('/health', methods=['GET'])
