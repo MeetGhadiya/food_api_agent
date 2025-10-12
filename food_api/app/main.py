@@ -176,7 +176,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     # If user doesn't exist or password doesn't match, raise a 401 Unauthorized error
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
-            status_code=status.HTTP_402_UNAUTHORIZED,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
