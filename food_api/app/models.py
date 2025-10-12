@@ -10,16 +10,8 @@ from typing import Optional
 class Restaurant(Document):
     name: str
     area: str
-    cuisine: str  # This will be renamed to item_name in future
-    item_name: Optional[str] = None  # New field for item name
-    price: Optional[float] = None  # Price in rupees
-    rating: Optional[float] = None  # Rating out of 5
-    total_ratings: Optional[int] = None  # Number of ratings
-    description: Optional[str] = None  # Item description
-    image_url: Optional[str] = None  # Image URL
-    calories: Optional[int] = None  # Calories
-    preparation_time: Optional[str] = None  # e.g., "30-40 mins"
-    
+    items: list = []  # List of items (dicts) for this restaurant
+    # Example item: {"item_name": str, "price": float, "rating": float, "total_ratings": int, "description": str, "image_url": str, "calories": int, "preparation_time": str}
     class Settings:
         name = "restaurants" # This is the collection name in MongoDB
 

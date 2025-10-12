@@ -78,7 +78,7 @@ api_tool = genai.protos.Tool(
                            place_order_func]
 )
 model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash', 
+    model_name='models/gemini-1.5-flash', 
     tools=[api_tool]
 )
 
