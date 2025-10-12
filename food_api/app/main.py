@@ -54,27 +54,26 @@ def read_root():
     """Provides a simple welcome message at the root URL."""
     return {"message": "Welcome to the Food Delivery API!"}
 
-@app.get("/restaurants/", response_model=List[Restaurant])
+from .schemas import RestaurantCreate, UserCreate, UserOut, OrderCreate, RestaurantItem
+
+@app.get("/restaurants/", response_model=List[RestaurantCreate])
 async def get_all_restaurants():
     """
     Retrieves and returns a list of all restaurants from the database.
     This endpoint is public and does not require authentication.
     """
-    # Fetch all restaurant documents and convert them to a list
     restaurants = await Restaurant.find_all().to_list()
-    return restaurants
+    return [RestaurantCreate(name=r.name, area=r.area, items=r.items) for r in restaurants]
 
-@app.get("/restaurants/{restaurant_name}", response_model=Restaurant)
+@app.get("/restaurants/{restaurant_name}", response_model=RestaurantCreate)
 async def get_restaurant_by_name(restaurant_name: str):
     """
     Retrieves a single restaurant by its unique name using a path parameter.
     """
-    # Find one restaurant that matches the provided name
     restaurant = await Restaurant.find_one(Restaurant.name == restaurant_name)
-    # If no restaurant is found, raise a 404 Not Found error
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
-    return restaurant
+    return RestaurantCreate(name=restaurant.name, area=restaurant.area, items=restaurant.items)
 
 # --- Protected Restaurant Endpoints (Login Required) ---
 
@@ -104,16 +103,11 @@ async def update_restaurant_by_name(
     """
     # Find the existing restaurant by its name
     restaurant = await Restaurant.find_one(Restaurant.name == restaurant_name)
-    # If it doesn't exist, return a 404 error
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
-    
-    # Update the restaurant's fields with the new data
     restaurant.name = update_data.name
     restaurant.area = update_data.area
-    restaurant.cuisine = update_data.cuisine
-    
-    # Save the changes to the database
+    restaurant.items = update_data.items
     await restaurant.save()
     return restaurant
 
