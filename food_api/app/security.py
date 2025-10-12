@@ -16,7 +16,13 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 def hash_password(password: str) -> str:
-    """Hashes a plain-text password."""
+    """Hashes a plain-text password. Truncates to 72 bytes to comply with bcrypt limit."""
+    # Bcrypt has a 72 byte limit, so we truncate if necessary
+    # Encoding to bytes and truncating ensures we don't split a multi-byte character
+    password_bytes = password.encode('utf-8')
+    if len(password_bytes) > 72:
+        password_bytes = password_bytes[:72]
+        password = password_bytes.decode('utf-8', errors='ignore')
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
