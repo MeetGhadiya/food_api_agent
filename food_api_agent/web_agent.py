@@ -16,6 +16,9 @@ CORS(app)
 
 API_BASE_URL = "http://localhost:8000"
 
+# Store session context (restaurant being discussed, etc.)
+session_contexts = {}
+
 # Simple pattern-based responses
 def get_all_restaurants():
     try:
@@ -47,9 +50,13 @@ def place_order(restaurant_name, item, token):
     except Exception as e:
         return None
 
-def process_message(message, token):
-    """Simple pattern matching for common queries"""
+def process_message(message, token, session_id="default"):
+    """Simple pattern matching for common queries with session context"""
     message_lower = message.lower()
+    
+    # Get or create session context
+    if session_id not in session_contexts:
+        session_contexts[session_id] = {"current_restaurant": None, "last_items": []}
     
     # List restaurants
     if any(word in message_lower for word in ['list', 'show', 'all', 'restaurants', 'available', 'menu']):
@@ -79,6 +86,10 @@ def process_message(message, token):
             matching = [r for r in restaurants if rest_name in r['name'].lower()]
             if matching:
                 rest = matching[0]
+                # Store restaurant in session context
+                session_contexts[session_id]["current_restaurant"] = rest['name']
+                session_contexts[session_id]["last_items"] = [item['item_name'] for item in rest.get('items', [])]
+                
                 response = f"🍽️ **{rest['name']}** - {rest['area']}\n\n"
                 response += "📋 **Menu:**\n"
                 for item in rest.get('items', []):
@@ -91,9 +102,9 @@ def process_message(message, token):
                 response += "\n💡 Say 'I want [item name]' to order!"
                 return response
     
-    # Order food
-    order_pattern = r"(?:i want|order|get me|i'll have|give me)\s+(.+?)\s+(?:from|at)\s+(.+)"
-    match = re.search(order_pattern, message_lower)
+    # Order food with restaurant name specified
+    order_pattern_with_restaurant = r"(?:i want|order|get me|i'll have|give me)\s+(.+?)\s+(?:from|at)\s+(.+)"
+    match = re.search(order_pattern_with_restaurant, message_lower)
     if match:
         if not token:
             return "🔒 **Please login first to place an order!**\n\nClick the Login button in the top right corner."
@@ -101,11 +112,37 @@ def process_message(message, token):
         item = match.group(1).strip()
         restaurant = match.group(2).strip()
         
+        # Store restaurant in context for future orders
+        session_contexts[session_id]["current_restaurant"] = restaurant
+        
         result = place_order(restaurant, item, token)
         if result:
             return f"✅ **Order Placed Successfully!**\n\n📦 Item: {item}\n🏪 Restaurant: {restaurant}\n\nYour order is being prepared! 🎉"
         else:
             return f"❌ **Order failed.** Please check:\n• Restaurant name: '{restaurant}'\n• Item name: '{item}'\n• Make sure you're logged in"
+    
+    # Order food WITHOUT restaurant name (use context)
+    order_pattern_simple = r"(?:i want|order|get me|i'll have|give me)\s+(.+)"
+    match_simple = re.search(order_pattern_simple, message_lower)
+    if match_simple and session_contexts[session_id].get("current_restaurant"):
+        if not token:
+            return "🔒 **Please login first to place an order!**\n\nClick the Login button in the top right corner."
+        
+        item = match_simple.group(1).strip()
+        restaurant = session_contexts[session_id]["current_restaurant"]
+        
+        # Check if item is in the last viewed menu
+        last_items = session_contexts[session_id].get("last_items", [])
+        if last_items and not any(item.lower() in menu_item.lower() or menu_item.lower() in item for menu_item in last_items):
+            return f"❓ **'{item}' is not on the menu at {restaurant}.**\n\nPlease choose from their menu or say 'show me {restaurant} menu' to see all items."
+        
+        result = place_order(restaurant, item, token)
+        if result:
+            # Clear context after successful order
+            session_contexts[session_id]["current_restaurant"] = None
+            return f"✅ **Order Placed Successfully!**\n\n📦 Item: {item}\n🏪 Restaurant: {restaurant}\n\nYour order is being prepared! 🎉\n\nWant to order more? Say 'show restaurants'!"
+        else:
+            return f"❌ **Order failed.** Please check:\n• Item name: '{item}'\n• Restaurant: {restaurant}\n• Make sure you're logged in"
     
     # Help
     if any(word in message_lower for word in ['help', 'what can you do', 'how']):
@@ -147,11 +184,12 @@ def chat():
         data = request.json
         user_message = data.get('message', '')
         token = data.get('token')
+        session_id = data.get('session_id', 'default')
         
         if not user_message:
             return jsonify({"error": "Message is required"}), 400
         
-        response_text = process_message(user_message, token)
+        response_text = process_message(user_message, token, session_id)
         
         return jsonify({
             "response": response_text,
