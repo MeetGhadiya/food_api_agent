@@ -19,7 +19,7 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173", "http://localhost:3000"])
+CORS(app, origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"])
 
 # Configure Gemini AI
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
