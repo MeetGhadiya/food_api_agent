@@ -110,39 +110,135 @@ def process_message(message, token, session_id="default"):
             return "🔒 **Please login first to place an order!**\n\nClick the Login button in the top right corner."
         
         item = match.group(1).strip()
-        restaurant = match.group(2).strip()
+        restaurant_input = match.group(2).strip()
+        
+        # Find the actual restaurant (fuzzy match)
+        restaurants = get_all_restaurants()
+        matched_restaurant = None
+        for rest in restaurants:
+            if restaurant_input.lower() in rest['name'].lower() or rest['name'].lower() in restaurant_input.lower():
+                matched_restaurant = rest
+                break
+        
+        if not matched_restaurant:
+            return f"❌ **Restaurant '{restaurant_input}' not found.**\n\nSay 'show restaurants' to see all available restaurants."
+        
+        restaurant_name = matched_restaurant['name']
+        
+        # Fuzzy match the item from menu
+        menu_items = matched_restaurant.get('items', [])
+        matched_item = None
+        for menu_item in menu_items:
+            if item.lower() == menu_item['item_name'].lower():
+                matched_item = menu_item['item_name']
+                break
+        
+        if not matched_item:
+            for menu_item in menu_items:
+                if item.lower() in menu_item['item_name'].lower() or menu_item['item_name'].lower() in item.lower():
+                    matched_item = menu_item['item_name']
+                    break
+        
+        if not matched_item:
+            items_list = "\n".join([f"   • {mi['item_name']}" for mi in menu_items[:10]])
+            return f"❌ **'{item}' not found at {restaurant_name}.**\n\n📋 **Available items:**\n{items_list}\n\n💡 Try: 'I want [item name] from {restaurant_name}'"
         
         # Store restaurant in context for future orders
-        session_contexts[session_id]["current_restaurant"] = restaurant
+        session_contexts[session_id]["current_restaurant"] = restaurant_name
+        session_contexts[session_id]["last_items"] = [mi['item_name'] for mi in menu_items]
         
-        result = place_order(restaurant, item, token)
+        result = place_order(restaurant_name, matched_item, token)
         if result:
-            return f"✅ **Order Placed Successfully!**\n\n📦 Item: {item}\n🏪 Restaurant: {restaurant}\n\nYour order is being prepared! 🎉"
+            return f"✅ **Order Placed Successfully!**\n\n📦 Item: {matched_item}\n🏪 Restaurant: {restaurant_name}\n\nYour order is being prepared! 🎉"
         else:
-            return f"❌ **Order failed.** Please check:\n• Restaurant name: '{restaurant}'\n• Item name: '{item}'\n• Make sure you're logged in"
+            return f"❌ **Order failed.** Please check:\n• Restaurant: '{restaurant_name}'\n• Item: '{matched_item}'\n• Make sure you're logged in"
     
-    # Order food WITHOUT restaurant name (use context)
+    # Order food WITHOUT restaurant name (check if item exists in multiple restaurants)
     order_pattern_simple = r"(?:i want|order|get me|i'll have|give me)\s+(.+)"
     match_simple = re.search(order_pattern_simple, message_lower)
-    if match_simple and session_contexts[session_id].get("current_restaurant"):
-        if not token:
-            return "🔒 **Please login first to place an order!**\n\nClick the Login button in the top right corner."
-        
+    if match_simple:
         item = match_simple.group(1).strip()
-        restaurant = session_contexts[session_id]["current_restaurant"]
         
-        # Check if item is in the last viewed menu
-        last_items = session_contexts[session_id].get("last_items", [])
-        if last_items and not any(item.lower() in menu_item.lower() or menu_item.lower() in item for menu_item in last_items):
-            return f"❓ **'{item}' is not on the menu at {restaurant}.**\n\nPlease choose from their menu or say 'show me {restaurant} menu' to see all items."
+        # Search for this item across ALL restaurants
+        all_restaurants = get_all_restaurants()
+        restaurants_with_item = []
         
-        result = place_order(restaurant, item, token)
-        if result:
-            # Clear context after successful order
-            session_contexts[session_id]["current_restaurant"] = None
-            return f"✅ **Order Placed Successfully!**\n\n📦 Item: {item}\n🏪 Restaurant: {restaurant}\n\nYour order is being prepared! 🎉\n\nWant to order more? Say 'show restaurants'!"
+        for rest in all_restaurants:
+            for menu_item in rest.get('items', []):
+                # Fuzzy match the item
+                if (item.lower() == menu_item['item_name'].lower() or 
+                    item.lower() in menu_item['item_name'].lower() or 
+                    menu_item['item_name'].lower() in item.lower()):
+                    restaurants_with_item.append({
+                        'restaurant': rest['name'],
+                        'area': rest['area'],
+                        'item_name': menu_item['item_name'],
+                        'price': menu_item.get('price', 'N/A'),
+                        'rating': menu_item.get('rating', 'N/A')
+                    })
+                    break  # Only add restaurant once even if multiple matches
+        
+        # If item found in multiple restaurants, show options
+        if len(restaurants_with_item) > 1:
+            response = f"🔍 **'{item}' is available at {len(restaurants_with_item)} restaurants:**\n\n"
+            for idx, rest_info in enumerate(restaurants_with_item, 1):
+                response += f"{idx}. 📍 **{rest_info['restaurant']}** ({rest_info['area']})\n"
+                response += f"   • {rest_info['item_name']} - ₹{rest_info['price']} ⭐{rest_info['rating']}\n\n"
+            response += "💡 **To order, say:**\n"
+            response += f"   'I want {item} from [restaurant name]'\n\n"
+            response += "Or tap on a restaurant to see their full menu!"
+            return response
+        
+        # If found in exactly one restaurant
+        elif len(restaurants_with_item) == 1:
+            if not token:
+                return "🔒 **Please login first to place an order!**\n\nClick the Login button in the top right corner."
+            
+            rest_info = restaurants_with_item[0]
+            restaurant = rest_info['restaurant']
+            final_item = rest_info['item_name']
+            
+            # Store in context
+            session_contexts[session_id]["current_restaurant"] = restaurant
+            
+            result = place_order(restaurant, final_item, token)
+            if result:
+                session_contexts[session_id]["current_restaurant"] = None
+                return f"✅ **Order Placed Successfully!**\n\n📦 Item: {final_item}\n🏪 Restaurant: {restaurant} ({rest_info['area']})\n💰 Price: ₹{rest_info['price']}\n\nYour order is being prepared! 🎉\n\nWant to order more? Say 'show restaurants'!"
+            else:
+                return f"❌ **Order failed.** Please try again or contact support."
+        
+        # If using context from previous conversation
+        elif session_contexts[session_id].get("current_restaurant"):
+            if not token:
+                return "🔒 **Please login first to place an order!**\n\nClick the Login button in the top right corner."
+            
+            restaurant = session_contexts[session_id]["current_restaurant"]
+            last_items = session_contexts[session_id].get("last_items", [])
+            
+            # Check in last viewed menu
+            matched_item = None
+            if last_items:
+                for menu_item in last_items:
+                    if item.lower() == menu_item.lower() or item.lower() in menu_item.lower() or menu_item.lower() in item.lower():
+                        matched_item = menu_item
+                        break
+                
+                if not matched_item:
+                    items_list = "\n".join([f"   • {mi}" for mi in last_items])
+                    return f"❌ **'{item}' is not available at {restaurant}.**\n\n📋 **Available items:**\n{items_list}\n\n💡 Try: 'I want [item name]'"
+            
+            final_item = matched_item if matched_item else item
+            result = place_order(restaurant, final_item, token)
+            if result:
+                session_contexts[session_id]["current_restaurant"] = None
+                return f"✅ **Order Placed Successfully!**\n\n📦 Item: {final_item}\n🏪 Restaurant: {restaurant}\n\nYour order is being prepared! 🎉\n\nWant to order more? Say 'show restaurants'!"
+            else:
+                return f"❌ **Order failed.** Please check if '{final_item}' exists at {restaurant}."
+        
+        # Item not found anywhere
         else:
-            return f"❌ **Order failed.** Please check:\n• Item name: '{item}'\n• Restaurant: {restaurant}\n• Make sure you're logged in"
+            return f"❌ **'{item}' not found in any restaurant.**\n\n💡 Say 'show all restaurants' to browse menus\n💡 Or try a different item name"
     
     # Help
     if any(word in message_lower for word in ['help', 'what can you do', 'how']):
