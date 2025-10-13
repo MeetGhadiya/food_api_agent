@@ -1,6 +1,7 @@
 """
-AI Food Delivery Chatbot Agent
+AI Food Delivery Chatbot Agent - V2.0
 Built with Google Gemini AI and Flask
+Enhanced with Reviews, Multi-Item Orders, and Cuisine Search
 
 This agent processes natural language queries and converts them to FastAPI calls.
 """
@@ -12,7 +13,7 @@ import requests
 import google.generativeai as genai
 from dotenv import load_dotenv
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 # Load environment variables
 load_dotenv()
@@ -35,7 +36,7 @@ FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://localhost:8000")
 chat_sessions: Dict[str, list] = {}
 
 # Pending orders storage (for confirmation flow)
-pending_orders: Dict[str, Dict[str, str]] = {}
+pending_orders: Dict[str, Dict[str, Any]] = {}
 
 # ==================== FUNCTION DECLARATIONS ====================
 
@@ -65,13 +66,13 @@ function_declarations = [
     ),
     genai.protos.FunctionDeclaration(
         name="search_restaurants_by_cuisine",
-        description="Search for restaurants that serve a specific type of cuisine (e.g., Italian, Chinese, Indian, American). Use when user asks for food type or cuisine.",
+        description="Search for restaurants that serve a specific type of cuisine (e.g., Italian, Chinese, Gujarati, North Indian, South Indian, Desserts). Use when user asks for food type or cuisine.",
         parameters=genai.protos.Schema(
             type=genai.protos.Type.OBJECT,
             properties={
                 "cuisine": genai.protos.Schema(
                     type=genai.protos.Type.STRING,
-                    description="The type of cuisine to search for (e.g., 'Italian', 'Chinese')"
+                    description="The type of cuisine to search for (e.g., 'Italian', 'Gujarati', 'North Indian')"
                 )
             },
             required=["cuisine"]
@@ -79,7 +80,7 @@ function_declarations = [
     ),
     genai.protos.FunctionDeclaration(
         name="place_order",
-        description="Place a food order from a restaurant. Use when user wants to order, buy, or get food. The function will handle authentication automatically.",
+        description="Place a food order with multiple items from a restaurant. Use when user wants to order, buy, or get food. Supports ordering multiple items in one order.",
         parameters=genai.protos.Schema(
             type=genai.protos.Type.OBJECT,
             properties={
@@ -87,16 +88,33 @@ function_declarations = [
                     type=genai.protos.Type.STRING,
                     description="Name of the restaurant to order from"
                 ),
-                "item": genai.protos.Schema(
-                    type=genai.protos.Type.STRING,
-                    description="The food item or dish to order"
+                "items": genai.protos.Schema(
+                    type=genai.protos.Type.ARRAY,
+                    description="List of items to order with quantities and prices",
+                    items=genai.protos.Schema(
+                        type=genai.protos.Type.OBJECT,
+                        properties={
+                            "item_name": genai.protos.Schema(
+                                type=genai.protos.Type.STRING,
+                                description="Name of the food item"
+                            ),
+                            "quantity": genai.protos.Schema(
+                                type=genai.protos.Type.INTEGER,
+                                description="Quantity of this item"
+                            ),
+                            "price": genai.protos.Schema(
+                                type=genai.protos.Type.NUMBER,
+                                description="Price per unit of this item"
+                            )
+                        }
+                    )
                 ),
                 "token": genai.protos.Schema(
                     type=genai.protos.Type.STRING,
                     description="User authentication token"
                 )
             },
-            required=["restaurant_name", "item", "token"]
+            required=["restaurant_name", "items", "token"]
         )
     ),
     genai.protos.FunctionDeclaration(
@@ -111,6 +129,60 @@ function_declarations = [
                 )
             },
             required=["token"]
+        )
+    ),
+    genai.protos.FunctionDeclaration(
+        name="add_review",
+        description="Submit a review and rating for a restaurant. Rating must be 1-5 stars. Use when user wants to review, rate, or give feedback about a restaurant.",
+        parameters=genai.protos.Schema(
+            type=genai.protos.Type.OBJECT,
+            properties={
+                "restaurant_name": genai.protos.Schema(
+                    type=genai.protos.Type.STRING,
+                    description="Name of the restaurant to review"
+                ),
+                "rating": genai.protos.Schema(
+                    type=genai.protos.Type.INTEGER,
+                    description="Rating from 1 to 5 stars (1=Poor, 5=Excellent)"
+                ),
+                "comment": genai.protos.Schema(
+                    type=genai.protos.Type.STRING,
+                    description="Optional review comment or feedback"
+                ),
+                "token": genai.protos.Schema(
+                    type=genai.protos.Type.STRING,
+                    description="User authentication token"
+                )
+            },
+            required=["restaurant_name", "rating", "token"]
+        )
+    ),
+    genai.protos.FunctionDeclaration(
+        name="get_reviews",
+        description="Get all reviews for a specific restaurant. Use when user wants to see reviews, ratings, or feedback for a restaurant.",
+        parameters=genai.protos.Schema(
+            type=genai.protos.Type.OBJECT,
+            properties={
+                "restaurant_name": genai.protos.Schema(
+                    type=genai.protos.Type.STRING,
+                    description="Name of the restaurant"
+                )
+            },
+            required=["restaurant_name"]
+        )
+    ),
+    genai.protos.FunctionDeclaration(
+        name="get_review_stats",
+        description="Get review statistics for a restaurant including average rating and rating distribution. Use when user wants to know overall rating or stats.",
+        parameters=genai.protos.Schema(
+            type=genai.protos.Type.OBJECT,
+            properties={
+                "restaurant_name": genai.protos.Schema(
+                    type=genai.protos.Type.STRING,
+                    description="Name of the restaurant"
+                )
+            },
+            required=["restaurant_name"]
         )
     ),
     genai.protos.FunctionDeclaration(
@@ -152,32 +224,6 @@ function_declarations = [
             },
             required=["username", "password"]
         )
-    ),
-    genai.protos.FunctionDeclaration(
-        name="create_restaurant",
-        description="Create a new restaurant in the system. Requires authentication. Use when user wants to add or register a restaurant.",
-        parameters=genai.protos.Schema(
-            type=genai.protos.Type.OBJECT,
-            properties={
-                "name": genai.protos.Schema(
-                    type=genai.protos.Type.STRING,
-                    description="Name of the restaurant"
-                ),
-                "area": genai.protos.Schema(
-                    type=genai.protos.Type.STRING,
-                    description="Location or area of the restaurant"
-                ),
-                "cuisine": genai.protos.Schema(
-                    type=genai.protos.Type.STRING,
-                    description="Type of cuisine served"
-                ),
-                "token": genai.protos.Schema(
-                    type=genai.protos.Type.STRING,
-                    description="User authentication token"
-                )
-            },
-            required=["name", "area", "cuisine", "token"]
-        )
     )
 ]
 
@@ -193,18 +239,19 @@ def get_all_restaurants() -> str:
         if response.status_code == 200:
             restaurants = response.json()
             if not restaurants:
-                return "No restaurants are currently available."
+                return "No restaurants are currently available. 😔"
             
-            result = f"I found {len(restaurants)} restaurant(s):\n\n"
+            # Format as a clean bulleted list
+            result = f"🍽️ I found these restaurants for you! ({len(restaurants)} total)\n\n"
             for restaurant in restaurants:
-                result += f"🏪 **{restaurant['name']}**\n"
-                result += f"📍 Area: {restaurant['area']}\n"
-                result += f"🍽️ Cuisine: {restaurant['cuisine']}\n\n"
+                result += f"• **{restaurant['name']}** in {restaurant['area']} (Cuisine: {restaurant.get('cuisine', 'N/A')})\n"
+            
+            result += "\n💡 Want to know more? Just ask about any restaurant!"
             return result
         else:
-            return f"Error fetching restaurants: {response.status_code}"
+            return f"❌ Error fetching restaurants: {response.status_code}"
     except Exception as e:
-        return f"Error connecting to restaurant service: {str(e)}"
+        return f"❌ Error connecting to restaurant service: {str(e)}"
 
 
 def get_restaurant_by_name(name: str) -> str:
@@ -213,50 +260,61 @@ def get_restaurant_by_name(name: str) -> str:
         response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/{name}")
         if response.status_code == 200:
             restaurant = response.json()
-            result = f"🏪 **{restaurant['name']}**\n"
+            result = f"🏪 **{restaurant['name']}**\n\n"
             result += f"📍 Location: {restaurant['area']}\n"
-            result += f"🍽️ Cuisine: {restaurant['cuisine']}\n\n"
-            result += "What would you like to order from here?"
+            result += f"🍴 Cuisine: {restaurant.get('cuisine', 'Not specified')}\n\n"
+            
+            # Show menu items with bullet points
+            items = restaurant.get('items', [])
+            if items:
+                result += "📋 **Menu Items:**\n\n"
+                for item in items:
+                    price = item.get('price', 'N/A')
+                    result += f"* {item['name']} - ₹{price}\n"
+            else:
+                result += "📋 Menu: Items available\n"
+            
+            result += "\n💡 Want to order? Just tell me what you'd like!"
             return result
         elif response.status_code == 404:
-            return f"❌ Restaurant '{name}' not found. Would you like to see all available restaurants?"
+            return f"😔 Oops! Restaurant '{name}' not found.\n\n💡 Would you like to see all available restaurants?"
         else:
-            return f"Error: {response.status_code}"
+            return f"❌ Error: {response.status_code}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 def search_restaurants_by_cuisine(cuisine: str) -> str:
-    """Search restaurants by cuisine type"""
+    """Search restaurants by cuisine type using the new backend API"""
     try:
-        response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/")
+        # Use the cuisine query parameter (case-insensitive)
+        response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/", params={"cuisine": cuisine})
         if response.status_code == 200:
-            all_restaurants = response.json()
-            # Filter by cuisine (case-insensitive)
-            matching = [r for r in all_restaurants if cuisine.lower() in r['cuisine'].lower()]
+            restaurants = response.json()
             
-            if not matching:
-                return f"❌ No restaurants found serving {cuisine} cuisine. Would you like to see all restaurants?"
+            if not restaurants:
+                return f"😔 Sorry, no restaurants found serving **{cuisine}** cuisine.\n\n💡 Available cuisines:\n* Gujarati\n* Italian\n* South Indian\n* Multi-cuisine\n* Cafe"
             
-            result = f"I found {len(matching)} restaurant(s) serving {cuisine} cuisine:\n\n"
-            for restaurant in matching:
-                result += f"🏪 **{restaurant['name']}**\n"
-                result += f"📍 Area: {restaurant['area']}\n"
-                result += f"🍽️ Cuisine: {restaurant['cuisine']}\n\n"
+            # Format with proper bullets and structure
+            result = f"� I found these **{cuisine}** restaurants for you!\n\n"
+            for restaurant in restaurants:
+                result += f"• **{restaurant['name']}** in {restaurant['area']}\n"
+            
+            result += f"\n💡 Want to see the menu? Just ask about any restaurant!"
             return result
         else:
-            return f"Error: {response.status_code}"
+            return f"❌ Error searching restaurants: {response.status_code}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"❌ Error connecting to restaurant service: {str(e)}"
 
 
-def place_order(restaurant_name: str, item: str, token: str) -> str:
-    """Place an order"""
+def place_order(restaurant_name: str, items: List[Dict[str, Any]], token: str) -> str:
+    """Place an order with multiple items (NEW v2.0 API)"""
     try:
         headers = {"Authorization": f"Bearer {token}"}
         data = {
             "restaurant_name": restaurant_name,
-            "item": item
+            "items": items
         }
         response = requests.post(
             f"{FASTAPI_BASE_URL}/orders/",
@@ -266,15 +324,25 @@ def place_order(restaurant_name: str, item: str, token: str) -> str:
         
         if response.status_code == 200:
             order = response.json()
-            result = "✅ **Order Placed Successfully!**\n\n"
-            result += f"🍕 Item: {order.get('item', item)}\n"
+            result = "✅ **Order Placed Successfully!** 🎉\n\n"
             result += f"🏪 Restaurant: {order.get('restaurant_name', restaurant_name)}\n"
-            result += f"📝 Order ID: #{order.get('id', 'N/A')}\n"
+            result += f"📝 Order ID: #{order.get('id', 'N/A')}\n\n"
+            
+            result += "📦 **Your Items:**\n"
+            for item in order.get('items', []):
+                result += f"  • {item['item_name']} × {item['quantity']} = ₹{item['price'] * item['quantity']}\n"
+            
+            result += f"\n💰 **Total: ₹{order.get('total_price', 0):.2f}**\n"
             result += f"⏰ Estimated delivery: 30-45 minutes\n\n"
-            result += "Would you like to order anything else?"
+            result += "💭 **What's next?**\n"
+            result += "• View your orders: 'Show my orders'\n"
+            result += "• Leave a review: 'Review this restaurant'\n"
+            result += "• Order more: 'Show restaurants'\n"
             return result
         elif response.status_code == 401:
             return "🔒 Authentication failed. Please login again."
+        elif response.status_code == 404:
+            return f"😔 Restaurant '{restaurant_name}' not found. Please check the name and try again."
         else:
             error_detail = response.json().get('detail', 'Unknown error')
             return f"❌ Order failed: {error_detail}"
@@ -283,7 +351,7 @@ def place_order(restaurant_name: str, item: str, token: str) -> str:
 
 
 def get_user_orders(token: str) -> str:
-    """Get all orders for authenticated user"""
+    """Get all orders for authenticated user (displays new multi-item format)"""
     try:
         headers = {"Authorization": f"Bearer {token}"}
         response = requests.get(f"{FASTAPI_BASE_URL}/orders/", headers=headers)
@@ -291,21 +359,142 @@ def get_user_orders(token: str) -> str:
         if response.status_code == 200:
             orders = response.json()
             if not orders:
-                return "You haven't placed any orders yet. Would you like to order something?"
+                return "📭 You haven't placed any orders yet. 😊\n\n💡 Ready to order some delicious food?"
             
-            result = f"📝 **Your Order History ({len(orders)} orders):**\n\n"
-            for order in orders:
-                result += f"Order #{order.get('id', 'N/A')}\n"
-                result += f"🍕 Item: {order.get('item', 'N/A')}\n"
-                result += f"🏪 Restaurant: {order.get('restaurant_name', 'N/A')}\n"
-                result += f"📅 Date: {order.get('created_at', 'N/A')}\n\n"
+            result = f"📝 **Your Order History ({len(orders)} order(s)):** 🍽️\n\n"
+            for idx, order in enumerate(orders, 1):
+                result += f"━━━━━━━━━━━━━━━━\n"
+                result += f"**Order #{idx}** (ID: {order.get('id', 'N/A')})\n"
+                result += f"🏪 {order.get('restaurant_name', 'N/A')}\n"
+                
+                # Show items
+                items = order.get('items', [])
+                if items:
+                    result += "📦 Items:\n"
+                    for item in items:
+                        result += f"  • {item.get('item_name', 'N/A')} × {item.get('quantity', 1)} = ₹{item.get('price', 0) * item.get('quantity', 1)}\n"
+                
+                result += f"💰 Total: ₹{order.get('total_price', 0):.2f}\n"
+                result += f"📅 {order.get('order_date', 'N/A')}\n\n"
+            
+            result += "💭 **Want to order again?** Just ask!"
             return result
         elif response.status_code == 401:
             return "🔒 Please login to view your orders."
         else:
-            return f"Error fetching orders: {response.status_code}"
+            return f"❌ Error fetching orders: {response.status_code}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
+
+
+def add_review(restaurant_name: str, rating: int, comment: str, token: str) -> str:
+    """Submit a review for a restaurant (NEW v2.0 feature)"""
+    try:
+        headers = {"Authorization": f"Bearer {token}"}
+        data = {
+            "rating": rating,
+            "comment": comment
+        }
+        response = requests.post(
+            f"{FASTAPI_BASE_URL}/restaurants/{restaurant_name}/reviews",
+            json=data,
+            headers=headers
+        )
+        
+        if response.status_code == 200:
+            review = response.json()
+            stars = "⭐" * rating
+            result = "✅ **Review Submitted!** 🎉\n\n"
+            result += f"🏪 Restaurant: {restaurant_name}\n"
+            result += f"{stars} ({rating}/5)\n"
+            result += f"💬 \"{comment}\"\n\n"
+            result += "🙏 Thank you for your feedback!\n"
+            result += "Your review helps others discover great food! 🍽️"
+            return result
+        elif response.status_code == 400:
+            error_detail = response.json().get('detail', 'Already reviewed')
+            if "already reviewed" in error_detail.lower():
+                return f"ℹ️ You've already reviewed {restaurant_name}!\n\nEach user can submit one review per restaurant. 😊"
+            else:
+                return f"❌ {error_detail}"
+        elif response.status_code == 401:
+            return "🔒 Please login to submit a review."
+        elif response.status_code == 404:
+            return f"😔 Restaurant '{restaurant_name}' not found."
+        else:
+            return f"❌ Error: {response.status_code}"
+    except Exception as e:
+        return f"❌ Error submitting review: {str(e)}"
+
+
+def get_reviews(restaurant_name: str) -> str:
+    """Get all reviews for a restaurant (NEW v2.0 feature)"""
+    try:
+        response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/{restaurant_name}/reviews")
+        
+        if response.status_code == 200:
+            reviews = response.json()
+            
+            if not reviews:
+                return f"📭 No reviews yet for {restaurant_name}.\n\n💡 Be the first to leave a review! 🌟"
+            
+            result = f"⭐ **Reviews for {restaurant_name}** ({len(reviews)} review(s))\n\n"
+            
+            for idx, review in enumerate(reviews, 1):
+                stars = "⭐" * review.get('rating', 0)
+                result += f"━━━━━━━━━━━━━━━━\n"
+                result += f"**Review #{idx}**\n"
+                result += f"{stars} {review.get('rating', 0)}/5\n"
+                result += f"👤 {review.get('username', 'Anonymous')}\n"
+                
+                comment = review.get('comment', '')
+                if comment:
+                    result += f"💬 \"{comment}\"\n"
+                
+                result += f"📅 {review.get('review_date', 'N/A')}\n\n"
+            
+            return result
+        elif response.status_code == 404:
+            return f"😔 Restaurant '{restaurant_name}' not found."
+        else:
+            return f"❌ Error: {response.status_code}"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+
+def get_review_stats(restaurant_name: str) -> str:
+    """Get review statistics (NEW v2.0 feature)"""
+    try:
+        response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/{restaurant_name}/reviews/stats")
+        
+        if response.status_code == 200:
+            stats = response.json()
+            
+            total = stats.get('total_reviews', 0)
+            if total == 0:
+                return f"📊 No reviews yet for {restaurant_name}.\n\n💡 Be the first to leave a review!"
+            
+            avg_rating = stats.get('average_rating', 0)
+            stars = "⭐" * round(avg_rating)
+            
+            result = f"📊 **Review Statistics for {restaurant_name}**\n\n"
+            result += f"{stars} **{avg_rating:.1f}/5.0**\n"
+            result += f"📝 {total} total review(s)\n\n"
+            
+            result += "**Rating Distribution:**\n"
+            distribution = stats.get('rating_distribution', {})
+            for rating in range(5, 0, -1):
+                count = distribution.get(str(rating), 0)
+                bar = "█" * count
+                result += f"{rating}⭐: {bar} {count}\n"
+            
+            return result
+        elif response.status_code == 404:
+            return f"😔 Restaurant '{restaurant_name}' not found."
+        else:
+            return f"❌ Error: {response.status_code}"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
 
 def register_user(username: str, email: str, password: str) -> str:
@@ -319,12 +508,12 @@ def register_user(username: str, email: str, password: str) -> str:
         response = requests.post(f"{FASTAPI_BASE_URL}/users/register", json=data)
         
         if response.status_code == 200:
-            return f"✅ **Registration Successful!**\n\nWelcome, {username}! 🎉\n\nYou can now login to start ordering delicious food!"
+            return f"✅ **Registration Successful!** 🎉\n\nWelcome to FoodieExpress, {username}! 🍽️\n\nYou can now:\n• 🛒 Place orders\n• ⭐ Leave reviews\n• 📝 Track your order history\n\nLet's get started! 🚀"
         else:
             error_detail = response.json().get('detail', 'Registration failed')
             return f"❌ Registration failed: {error_detail}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 def login_user(username: str, password: str) -> str:
@@ -345,44 +534,18 @@ def login_user(username: str, password: str) -> str:
             return json.dumps({
                 "success": True,
                 "token": token,
-                "message": f"✅ **Login Successful!**\n\nWelcome back, {username}! 🎉\n\nYou can now place orders and manage your account."
+                "message": f"✅ **Welcome Back!** 🎉\n\nHey {username}! Ready to order? 🍕\n\n💡 Try asking:\n• Show restaurants\n• Order [dish] from [restaurant]\n• See my orders\n• Review a restaurant"
             })
         else:
             return json.dumps({
                 "success": False,
-                "message": "❌ Login failed. Please check your username and password."
+                "message": "❌ Login failed. Please check your username and password. 🔒"
             })
     except Exception as e:
         return json.dumps({
             "success": False,
-            "message": f"Error: {str(e)}"
+            "message": f"❌ Error: {str(e)}"
         })
-
-
-def create_restaurant(name: str, area: str, cuisine: str, token: str) -> str:
-    """Create a new restaurant"""
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        data = {
-            "name": name,
-            "area": area,
-            "cuisine": cuisine
-        }
-        response = requests.post(
-            f"{FASTAPI_BASE_URL}/restaurants/",
-            json=data,
-            headers=headers
-        )
-        
-        if response.status_code == 200:
-            return f"✅ **Restaurant Created Successfully!**\n\n🏪 {name}\n📍 {area}\n🍽️ {cuisine}"
-        elif response.status_code == 401:
-            return "🔒 Authentication required. Please login first."
-        else:
-            error_detail = response.json().get('detail', 'Creation failed')
-            return f"❌ Failed to create restaurant: {error_detail}"
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 
 # Map function names to actual functions
@@ -392,9 +555,11 @@ available_functions = {
     "search_restaurants_by_cuisine": search_restaurants_by_cuisine,
     "place_order": place_order,
     "get_user_orders": get_user_orders,
+    "add_review": add_review,
+    "get_reviews": get_reviews,
+    "get_review_stats": get_review_stats,
     "register_user": register_user,
-    "login_user": login_user,
-    "create_restaurant": create_restaurant
+    "login_user": login_user
 }
 
 # ==================== CHAT ENDPOINT ====================
@@ -408,240 +573,64 @@ def chat():
         user_id = data.get('user_id', 'guest')
         token = data.get('token')
         
-        # DEBUG: Log token status - Use app.logger to ensure it shows
-        app.logger.info(f"🔍 Request received: message='{user_message}', user_id='{user_id}', has_token={bool(token)}")
-        if token:
-            app.logger.info(f"🔍 Token present: {token[:30]}...")
-        
         if not user_message:
             return jsonify({"error": "Message is required"}), 400
-        
-        # Convert message to lowercase early for all checks
-        msg_lower = user_message.lower()
         
         # Initialize chat session if not exists
         if user_id not in chat_sessions:
             chat_sessions[user_id] = []
         
-        # CHECK FOR ORDER CONFIRMATION (user said "yes" to pending order)
-        if msg_lower.strip() in ["yes", "y", "yeah", "yep", "confirm", "ok", "okay"]:
-            if user_id in pending_orders and token:
-                pending = pending_orders[user_id]
-                restaurant_name = pending['restaurant']
-                item = pending['item']
-                
-                app.logger.info(f"✅ User confirmed order: {item} from {restaurant_name}")
-                
-                # Place the order
-                order_result = place_order(restaurant_name, item, token)
-                
-                # Clear pending order
-                del pending_orders[user_id]
-                
-                return jsonify({"response": order_result})
-        
-        # SIMPLIFIED APPROACH: Detect order intent FIRST, bypass Gemini if ordering with token
-        # msg_lower already defined above
-        order_keywords = ["order", "get me", "i want", "buy", "get", "place order"]
-        has_order_intent = any(keyword in msg_lower for keyword in order_keywords)
-        
-        # DEBUG: Log the decision
-        app.logger.info(f"🔍 Order detection: msg='{msg_lower}', has_intent={has_order_intent}, has_token={bool(token)}")
-        
-        # If user wants to order and has token, handle it directly without Gemini
-        if has_order_intent and token:
-            app.logger.info(f"🎯 DIRECT ORDER HANDLING: Bypassing Gemini AI")
-            
-            # Parse restaurant and item
-            restaurant_name = None
-            item = None
-            
-            # Check different patterns for restaurant and item
-            if "from" in msg_lower:
-                # Pattern: "order bhel from Swati Snacks" or "i want bhel from Swati Snacks"
-                parts = user_message.split("from", 1)
-                if len(parts) == 2:
-                    restaurant_name = parts[1].strip()
-                    item_part = parts[0]
-                    for keyword in order_keywords:
-                        item_part = item_part.lower().replace(keyword, "")
-                    item = item_part.strip()
-                    app.logger.info(f"📝 Parsed: item='{item}', restaurant='{restaurant_name}'")
-            elif " at " in msg_lower:
-                # Pattern: "order bhel at Swati Snacks"
-                parts = user_message.split(" at ", 1)
-                if len(parts) == 2:
-                    restaurant_name = parts[1].strip()
-                    item_part = parts[0]
-                    for keyword in order_keywords:
-                        item_part = item_part.lower().replace(keyword, "")
-                    item = item_part.strip()
-                    app.logger.info(f"📝 Parsed: item='{item}', restaurant='{restaurant_name}'")
-            else:
-                # No restaurant specified, extract just the item
-                item_part = user_message
-                for keyword in order_keywords:
-                    item_part = item_part.lower().replace(keyword, "")
-                item = item_part.strip()
-                app.logger.info(f"📝 Parsed: item='{item}', no restaurant specified")
-            
-            if item:
-                if restaurant_name:
-                    # Direct order with restaurant
-                    app.logger.info(f"📦 Placing order: '{item}' from '{restaurant_name}'")
-                    order_result = place_order(restaurant_name, item, token)
-                    app.logger.info(f"📦 Order result: {order_result}")
-                    return jsonify({"response": order_result})
-                else:
-                    # Search for restaurants serving this item
-                    app.logger.info(f"🔍 Searching restaurants that serve: '{item}'")
-                    
-                    # Get all restaurants and filter by the item
-                    try:
-                        response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/")
-                        if response.status_code == 200:
-                            all_restaurants = response.json()
-                            
-                            # Filter restaurants that have the item in their cuisine or name
-                            item_lower = item.lower()
-                            matching_restaurants = []
-                            
-                            app.logger.info(f"🔍 Looking for '{item_lower}' in {len(all_restaurants)} restaurants")
-                            
-                            for r in all_restaurants:
-                                cuisine_lower = r.get('cuisine', '').lower() if r.get('cuisine') else ''
-                                name_lower = r.get('name', '').lower() if r.get('name') else ''
-                                item_name_lower = r.get('item_name', '').lower() if r.get('item_name') else ''
-                                
-                                # Check if item appears in cuisine, name, or item_name (substring match)
-                                if item_lower in cuisine_lower or item_lower in name_lower or item_lower in item_name_lower:
-                                    matching_restaurants.append(r)
-                                    app.logger.info(f"  ✅ Match: {r.get('name', 'Unknown')} - {r.get('cuisine', 'Unknown')}")
-                                else:
-                                    app.logger.info(f"  ❌ No match: {r.get('name', 'Unknown')} - {r.get('cuisine', 'Unknown')}")
-                            
-                            if matching_restaurants:
-                                # If only ONE restaurant found, ask for confirmation to order
-                                if len(matching_restaurants) == 1:
-                                    restaurant = matching_restaurants[0]
-                                    
-                                    # Store pending order
-                                    pending_orders[user_id] = {
-                                        "restaurant": restaurant['name'],
-                                        "item": item
-                                    }
-                                    
-                                    # Rich formatted response with safe dictionary access
-                                    item_display = restaurant.get('item_name') or restaurant.get('cuisine', 'Item')
-                                    result = f"✅ **{item_display}**\n"
-                                    result += f"🏪 {restaurant.get('name', 'Restaurant')}\n\n"
-                                    
-                                    # Show image if available
-                                    if restaurant.get('image_url'):
-                                        result += f"🖼️ [Image]({restaurant['image_url']})\n\n"
-                                    
-                                    # Show rating if available
-                                    if restaurant.get('rating'):
-                                        rating_stars = "⭐" * int(restaurant['rating'])
-                                        result += f"{rating_stars} {restaurant['rating']}"
-                                        if restaurant.get('total_ratings'):
-                                            result += f" ({restaurant['total_ratings']} ratings)"
-                                        result += "\n\n"
-                                    
-                                    # Show description
-                                    if restaurant.get('description'):
-                                        result += f"📝 {restaurant['description']}\n\n"
-                                    
-                                    # Show price
-                                    if restaurant.get('price'):
-                                        result += f"� ₹{restaurant['price']}\n"
-                                    
-                                    # Show location
-                                    area = restaurant.get('area', 'Location not specified')
-                                    result += f"📍 {area}\n"
-                                    
-                                    # Show calories if available
-                                    if restaurant.get('calories'):
-                                        result += f"🔥 {restaurant['calories']} kcal\n"
-                                    
-                                    # Show preparation time
-                                    if restaurant.get('preparation_time'):
-                                        result += f"⏰ {restaurant['preparation_time']}\n"
-                                    
-                                    result += f"\n💡 Type **'yes'** to confirm your order!"
-                                    return jsonify({"response": result})
-                                else:
-                                    # Multiple restaurants found, show list with rich formatting
-                                    result = f"🍽️ **Found {len(matching_restaurants)} option(s) for {item}:**\n\n"
-                                    for restaurant in matching_restaurants:
-                                        result += f"━━━━━━━━━━━━━━━\n"
-                                        item_display = restaurant.get('item_name') or restaurant.get('cuisine', 'Item')
-                                        result += f"**{item_display}**\n"
-                                        result += f"🏪 {restaurant.get('name', 'Restaurant')}\n"
-                                        
-                                        # Rating
-                                        rating = restaurant.get('rating')
-                                        if rating:
-                                            result += f"⭐ {rating}"
-                                            total_ratings = restaurant.get('total_ratings')
-                                            if total_ratings:
-                                                result += f" ({total_ratings})"
-                                            result += "\n"
-                                        
-                                        # Price
-                                        price = restaurant.get('price')
-                                        if price:
-                                            result += f"💰 ₹{price}\n"
-                                        
-                                        # Location
-                                        area = restaurant.get('area', 'Location not specified')
-                                        result += f"📍 {area}\n"
-                                        
-                                        # Description (shortened)
-                                        description = restaurant.get('description')
-                                        if description:
-                                            desc = description[:80] + "..." if len(description) > 80 else description
-                                            result += f"📝 {desc}\n"
-                                        
-                                        result += "\n"
-                                    
-                                    result += f"💡 To order, say: **'order {item} from [restaurant name]'**"
-                                    return jsonify({"response": result})
-                            else:
-                                # No match found - inform user
-                                result = f"😔 Sorry, I couldn't find any restaurants currently serving '{item}'.\n\n"
-                                result += f"Would you like to:\n"
-                                result += f"1. Try ordering something else?\n"
-                                result += f"2. See all available restaurants?"
-                                return jsonify({"response": result})
-                        else:
-                            return jsonify({"response": "Sorry, I couldn't fetch the restaurant list. Please try again."})
-                    except Exception as e:
-                        app.logger.error(f"Error searching restaurants: {e}")
-                        return jsonify({"response": f"Sorry, I encountered an error: {str(e)}"})
-        
-        # If no token and ordering, return auth error
-        if has_order_intent and not token:
-            return jsonify({
-                "response": "I can help with that! But first, I need you to log in or register.\n\nPlease use the **Login** button in the website header (top right corner).",
-                "requires_auth": True
-            })
-        
-        # System instruction for better AI responses
-        system_instruction = """You are a friendly food delivery assistant with access to several functions.
+        # Enhanced system instruction with v2.0 features
+        system_instruction = """You are a friendly and enthusiastic food delivery assistant! 🍕
 
-CRITICAL: You MUST use functions for ALL requests. Never refuse or ask users to do things manually.
+Your personality:
+- Use emojis frequently (🍽️, 🏪, ⭐, 💰, 🎉, ✅, 😊, etc.)
+- Be warm, welcoming, and helpful
+- Guide users through ordering, reviewing, and browsing
+- Celebrate their actions (orders, reviews) with enthusiasm!
 
-Function calling rules:
-- User wants to "order [food]" or "get [food]" → IMMEDIATELY call place_order() function
-- User asks "show restaurants" or "browse" → call get_all_restaurants()
-- User asks about "[cuisine] food" → call search_restaurants_by_cuisine()
-- User asks about specific restaurant → call get_restaurant_by_name()
+Key capabilities (ALWAYS use functions):
+1. **Browsing**: Show all restaurants or filter by cuisine type
+2. **Ordering**: Handle multi-item orders with quantities and prices
+3. **Reviews**: Submit reviews (1-5 stars), view reviews, see statistics
+4. **Orders**: Track order history with detailed item breakdowns
+5. **Search**: Find restaurants by cuisine (Gujarati, Italian, South Indian, Multi-cuisine, Cafe)
 
-NEVER say "please login" or "you need to authenticate" - just call the function!
-The backend will handle authentication automatically.
+CRITICAL FUNCTION CALLING RULES:
+- When user asks to "list", "show", "see", "find", "browse", "get" restaurants → MUST call get_all_restaurants()
+- When user mentions cuisine type → MUST call search_restaurants_by_cuisine()
+- When user asks about ONE restaurant by name → MUST call get_restaurant_by_name()
+- NEVER respond with just "Here you go!" without calling a function
+- NEVER skip calling functions - they contain the actual data
+- ALWAYS call the appropriate function FIRST, then use the result
 
-Always be friendly and conversational in your responses."""
+CRITICAL FORMATTING RULES:
+- When a function returns results, present them DIRECTLY - DO NOT rephrase or reformat
+- Function results are ALREADY properly formatted with bullets (•), bold text, and emojis
+- Simply present the function result to the user as-is
+- Add a brief friendly intro if needed, but keep the function data intact
+- NEVER convert bullet points (*) to plain comma-separated text
+- NEVER remove formatting from function results
+
+Response Pattern:
+1. Call the appropriate function
+2. Get the formatted result
+3. Present it directly to the user (optionally with a brief intro)
+
+Example:
+Function returns: "* Restaurant A\n* Restaurant B"
+Your response: "Here you go! 🎉\n\n* Restaurant A\n* Restaurant B"
+NOT: "I found Restaurant A, Restaurant B" ❌
+
+CRITICAL RULES:
+- ALWAYS call functions for user requests - never refuse!
+- ALWAYS preserve the exact formatting from function results
+- For orders: Extract items, quantities, and prices
+- For reviews: Get rating (1-5) and comment
+- Guide users naturally through multi-step processes
+- If authentication needed, politely inform them
+
+Make the experience delightful! 🌟"""
         
         # Create model with function calling
         model = genai.GenerativeModel(
@@ -662,62 +651,20 @@ Always be friendly and conversational in your responses."""
         # Send message and get response
         response = chat.send_message(user_message)
         
-        # WORKAROUND: If user wants to order and has token, manually call place_order
-        # msg_lower already defined at the top of function (line 420)
-        order_keywords = ["order", "get me", "i want", "buy"]
-        has_order_intent = any(keyword in msg_lower for keyword in order_keywords)
-        
-        print(f"🔍 WORKAROUND CHECK: msg='{user_message}', has_token={bool(token)}, has_order_intent={has_order_intent}")
-        
-        if has_order_intent and token:
-            app.logger.info(f"🔧 Order intent detected with token! Message: {user_message}")
-            
-            # Try to extract restaurant and item
-            restaurant_name = None
-            item = None
-            
-            # Parse "order [item] from [restaurant]"
-            if "from" in msg_lower:
-                parts = user_message.split("from", 1)
-                if len(parts) == 2:
-                    restaurant_name = parts[1].strip()
-                    # Get item from first part
-                    item_part = parts[0]
-                    for keyword in order_keywords:
-                        item_part = item_part.lower().replace(keyword, "")
-                    item = item_part.strip()
-            
-            if item and restaurant_name:
-                # Manually call place_order
-                app.logger.info(f"🔧 Forcing place_order: item='{item}', restaurant='{restaurant_name}'")
-                order_result = place_order(restaurant_name, item, token)
-                
-                # Send result back to model for formatting
-                response = chat.send_message(
-                    genai.protos.Content(
-                        parts=[genai.protos.Part(
-                            function_response=genai.protos.FunctionResponse(
-                                name="place_order",
-                                response={"result": order_result}
-                            )
-                        )]
-                    )
-                )
-        
         # Check if function call is needed
         if response.candidates[0].content.parts[0].function_call:
             function_call = response.candidates[0].content.parts[0].function_call
             function_name = function_call.name
             function_args = dict(function_call.args)
             
-            print(f"🤖 AI wants to call: {function_name} with args: {function_args}")
+            app.logger.info(f"🤖 AI calling: {function_name} with args: {function_args}")
             
             # Add token to protected functions if available
-            protected_functions = ['place_order', 'get_user_orders', 'create_restaurant']
+            protected_functions = ['place_order', 'get_user_orders', 'add_review']
             if function_name in protected_functions:
                 if not token:
                     return jsonify({
-                        "response": "I can help with that! But first, I need you to log in or register.\n\nPlease use the Login button in the website header.",
+                        "response": "🔒 **Authentication Required!**\n\nTo use this feature, please log in using the button in the top right corner. 🙂",
                         "requires_auth": True
                     })
                 function_args['token'] = token
@@ -744,13 +691,27 @@ Always be friendly and conversational in your responses."""
                                 "authenticated": False
                             })
                     
-                    # Send function result back to model for natural response
+                    # For listing/browsing functions, return result directly to preserve formatting
+                    direct_functions = ['get_all_restaurants', 'get_restaurant_by_name', 'search_restaurants_by_cuisine']
+                    if function_name in direct_functions:
+                        # Return the formatted result directly without AI rephrasing
+                        chat_sessions[user_id].append({
+                            "role": "model",
+                            "parts": [function_result]
+                        })
+                        
+                        return jsonify({
+                            "response": function_result,
+                            "function_called": function_name
+                        })
+                    
+                    # For other functions, send back to model for natural response
                     response = chat.send_message(
                         genai.protos.Content(
                             parts=[genai.protos.Part(
                                 function_response=genai.protos.FunctionResponse(
                                     name=function_name,
-                                    response={"result": function_result}
+                                    response={"result": f"IMPORTANT: Present this result EXACTLY as provided. Do not rephrase or reformat. Keep all bullet points (*), bold text (**), and line breaks:\n\n{function_result}"}
                                 )
                             )]
                         )
@@ -770,65 +731,17 @@ Always be friendly and conversational in your responses."""
                     })
                     
                 except Exception as e:
-                    print(f"Error executing function: {e}")
+                    app.logger.error(f"Error executing function: {e}")
                     return jsonify({
-                        "response": f"I encountered an error: {str(e)}. Please try again."
+                        "response": f"❌ I encountered an error: {str(e)}\n\nPlease try again! 😊"
                     })
             else:
                 return jsonify({
-                    "response": "I'm not sure how to help with that. Could you rephrase?"
+                    "response": "🤔 Hmm, I'm not sure how to help with that. Could you rephrase?"
                 })
         else:
             # Direct text response
             text_response = response.candidates[0].content.parts[0].text
-            
-            # HACK: If AI says "login" but user HAS a token, force it to call place_order
-            if token and ("log in" in text_response.lower() or "register" in text_response.lower()):
-                app.logger.warning(f"⚠️ AI refused to call function even though token exists! Forcing function call...")
-                
-                # Extract restaurant and item from the message
-                # msg_lower already defined at the top of function (line 420)
-                
-                # Try to find restaurant name and item
-                restaurant_name = None
-                item = None
-                
-                # Parse "order [item] from [restaurant]"
-                if "from" in msg_lower:
-                    parts = user_message.split("from", 1)
-                    if len(parts) == 2:
-                        restaurant_name = parts[1].strip()
-                        # Get item from first part
-                        item_part = parts[0].lower().replace("order", "").replace("get", "").replace("buy", "").strip()
-                        item = item_part
-                
-                # If we couldn't parse, try simpler approach
-                if not item:
-                    for food_word in ["order", "get", "buy", "want"]:
-                        if food_word in msg_lower:
-                            item = msg_lower.replace(food_word, "").strip()
-                            break
-                
-                if item and restaurant_name:
-                    # Manually call place_order
-                    app.logger.info(f"🔧 Manually calling place_order: {item} from {restaurant_name}")
-                    order_result = place_order(restaurant_name, item, token)
-                    
-                    # Send result back to model for formatting
-                    response2 = chat.send_message(
-                        genai.protos.Content(
-                            parts=[genai.protos.Part(
-                                function_response=genai.protos.FunctionResponse(
-                                    name="place_order",
-                                    response={"result": order_result}
-                                )
-                            )]
-                        )
-                    )
-                    text_response = response2.candidates[0].content.parts[0].text
-                else:
-                    # Can't parse the order, return auth error
-                    text_response = "I can help with that! But first, I need you to log in or register.\n\nPlease use the **Login** button in the website header."
             
             # Add to chat history
             chat_sessions[user_id].append({
@@ -841,11 +754,9 @@ Always be friendly and conversational in your responses."""
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        print(f"❌ ERROR in chat endpoint: {e}")
-        print(f"📋 Full traceback:\n{error_trace}")
         app.logger.error(f"Chat error: {e}\n{error_trace}")
         return jsonify({
-            "response": "I'm sorry, I encountered an error. Please try again.",
+            "response": "😅 Oops! I encountered an error. Please try again!",
             "error": str(e)
         }), 500
 
@@ -855,14 +766,20 @@ def root():
     """Root endpoint - provides API information"""
     return jsonify({
         "service": "AI Food Delivery Chatbot Agent",
-        "version": "1.0",
+        "version": "2.0.0",
         "status": "running",
+        "features": [
+            "Multi-Item Orders",
+            "Restaurant Reviews & Ratings",
+            "Cuisine-Based Search",
+            "Order History Tracking"
+        ],
         "endpoints": {
             "chat": "POST /chat",
             "health": "GET /health",
             "clear_session": "POST /clear-session"
         },
-        "powered_by": "Google Gemini AI",
+        "powered_by": "Google Gemini AI 2.0",
         "fastapi_backend": FASTAPI_BASE_URL
     })
 
@@ -878,8 +795,9 @@ def health():
     """Health check endpoint"""
     return jsonify({
         "status": "ok",
-        "service": "AI Food Delivery Agent",
-        "fastapi_backend": FASTAPI_BASE_URL
+        "service": "AI Food Delivery Agent v2.0",
+        "fastapi_backend": FASTAPI_BASE_URL,
+        "features": ["Reviews", "Multi-Item Orders", "Cuisine Search"]
     })
 
 
@@ -892,26 +810,45 @@ def clear_session():
     if user_id in chat_sessions:
         del chat_sessions[user_id]
     
-    return jsonify({"message": "Session cleared"})
+    if user_id in pending_orders:
+        del pending_orders[user_id]
+    
+    return jsonify({"message": "Session cleared successfully! 🧹"})
 
 
 # ==================== MAIN ====================
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("🤖 AI Food Delivery Chatbot Agent")
+    print("🤖 FoodieExpress AI Agent v2.0")
     print("=" * 60)
     print(f"✅ Google Gemini AI: Configured")
     print(f"✅ FastAPI Backend: {FASTAPI_BASE_URL}")
     print(f"✅ Agent Server: http://localhost:5000")
+    print("=" * 60)
+    print("🌟 New Features:")
+    print("  ⭐ Restaurant Reviews & Ratings")
+    print("  🛒 Multi-Item Orders")
+    print("  🔍 Cuisine-Based Search")
+    print("  📊 Review Statistics")
     print("=" * 60)
     print("📡 Available Endpoints:")
     print("  POST /chat          - Process chat messages")
     print("  GET  /health        - Health check")
     print("  POST /clear-session - Clear chat history")
     print("=" * 60)
-    print("🚀 Starting Flask server...")
+    print("🚀 Starting Flask server with Waitress...")
     print()
     
-    # Use debug=False for background running, or set use_reloader=False
-    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+    try:
+        # Use waitress for production-ready serving
+        from waitress import serve
+        print("✅ Waitress imported successfully")
+        print(f"🔗 Binding to 127.0.0.1:5000...")
+        serve(app, host='127.0.0.1', port=5000, threads=4)
+        print("⚠️ Server stopped")
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        input("Press Enter to exit...")
