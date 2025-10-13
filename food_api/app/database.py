@@ -27,6 +27,7 @@ async def init_db():
                     "app.models.User",
                     "app.models.Restaurant",
                     "app.models.Order",
+                    "app.models.Review",  # NEW: Add Review model
                 ]
             )
             print("✅ Database connection established.")
