@@ -199,7 +199,19 @@ def get_all_restaurants() -> str:
             for restaurant in restaurants:
                 result += f"🏪 **{restaurant['name']}**\n"
                 result += f"📍 Area: {restaurant['area']}\n"
-                result += f"🍽️ Cuisine: {restaurant['cuisine']}\n\n"
+                
+                # Show available items if present
+                if 'items' in restaurant and restaurant['items']:
+                    result += f"🍽️ Menu: {len(restaurant['items'])} items available\n"
+                    # Show first 3 items as preview
+                    items_preview = restaurant['items'][:3]
+                    for item in items_preview:
+                        item_name = item.get('item_name', 'Item')
+                        price = item.get('price', 0)
+                        result += f"  • {item_name} - ₹{price}\n"
+                    if len(restaurant['items']) > 3:
+                        result += f"  ... and {len(restaurant['items']) - 3} more items\n"
+                result += "\n"
             return result
         else:
             return f"Error fetching restaurants: {response.status_code}"
@@ -214,8 +226,28 @@ def get_restaurant_by_name(name: str) -> str:
         if response.status_code == 200:
             restaurant = response.json()
             result = f"🏪 **{restaurant['name']}**\n"
-            result += f"📍 Location: {restaurant['area']}\n"
-            result += f"🍽️ Cuisine: {restaurant['cuisine']}\n\n"
+            result += f"📍 Location: {restaurant['area']}\n\n"
+            
+            # Show menu items
+            if 'items' in restaurant and restaurant['items']:
+                result += f"📋 **Menu** ({len(restaurant['items'])} items):\n\n"
+                for item in restaurant['items']:
+                    item_name = item.get('item_name', 'Item')
+                    price = item.get('price', 0)
+                    rating = item.get('rating')
+                    description = item.get('description', '')
+                    
+                    result += f"**{item_name}** - ₹{price}\n"
+                    if rating:
+                        result += f"⭐ {rating}\n"
+                    if description:
+                        # Truncate long descriptions
+                        desc_short = description[:100] + "..." if len(description) > 100 else description
+                        result += f"{desc_short}\n"
+                    result += "\n"
+            else:
+                result += "Menu information not available.\n\n"
+            
             result += "What would you like to order from here?"
             return result
         elif response.status_code == 404:
@@ -232,8 +264,21 @@ def search_restaurants_by_cuisine(cuisine: str) -> str:
         response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/")
         if response.status_code == 200:
             all_restaurants = response.json()
-            # Filter by cuisine (case-insensitive)
-            matching = [r for r in all_restaurants if cuisine.lower() in r['cuisine'].lower()]
+            # Filter by cuisine - search in item names and descriptions
+            matching = []
+            cuisine_lower = cuisine.lower()
+            
+            for r in all_restaurants:
+                # Check if any item matches the cuisine
+                if 'items' in r and r['items']:
+                    for item in r['items']:
+                        item_name_lower = item.get('item_name', '').lower()
+                        description_lower = item.get('description', '').lower()
+                        
+                        if cuisine_lower in item_name_lower or cuisine_lower in description_lower:
+                            if r not in matching:
+                                matching.append(r)
+                            break
             
             if not matching:
                 return f"❌ No restaurants found serving {cuisine} cuisine. Would you like to see all restaurants?"
@@ -242,7 +287,17 @@ def search_restaurants_by_cuisine(cuisine: str) -> str:
             for restaurant in matching:
                 result += f"🏪 **{restaurant['name']}**\n"
                 result += f"📍 Area: {restaurant['area']}\n"
-                result += f"🍽️ Cuisine: {restaurant['cuisine']}\n\n"
+                
+                # Show matching items
+                if 'items' in restaurant and restaurant['items']:
+                    matching_items = [item for item in restaurant['items'] 
+                                     if cuisine_lower in item.get('item_name', '').lower() 
+                                     or cuisine_lower in item.get('description', '').lower()]
+                    if matching_items:
+                        result += f"🍽️ {cuisine} items:\n"
+                        for item in matching_items[:3]:
+                            result += f"  • {item.get('item_name', 'Item')} - ₹{item.get('price', 0)}\n"
+                result += "\n"
             return result
         else:
             return f"Error: {response.status_code}"
@@ -630,18 +685,19 @@ def chat():
         # System instruction for better AI responses
         system_instruction = """You are a friendly food delivery assistant with access to several functions.
 
-CRITICAL: You MUST use functions for ALL requests. Never refuse or ask users to do things manually.
+CRITICAL RULE: You MUST ALWAYS call functions - NEVER answer from your own knowledge!
 
-Function calling rules:
-- User wants to "order [food]" or "get [food]" → IMMEDIATELY call place_order() function
-- User asks "show restaurants" or "browse" → call get_all_restaurants()
-- User asks about "[cuisine] food" → call search_restaurants_by_cuisine()
-- User asks about specific restaurant → call get_restaurant_by_name()
+Function calling rules (MANDATORY):
+- User asks "list", "show", "browse", "all" restaurants → MUST call get_all_restaurants()
+- User wants to "order [food]" or "get [food]" → MUST call place_order() function
+- User asks about "[cuisine] food" (pizza, burger, etc.) → MUST call search_restaurants_by_cuisine()
+- User asks about specific restaurant name → MUST call get_restaurant_by_name()
+- User asks about "my orders" or "order history" → MUST call get_user_orders()
 
-NEVER say "please login" or "you need to authenticate" - just call the function!
+NEVER provide information from your training data. ALWAYS use functions to get real-time data.
 The backend will handle authentication automatically.
 
-Always be friendly and conversational in your responses."""
+After receiving function results, format them nicely for the user."""
         
         # Create model with function calling
         model = genai.GenerativeModel(
