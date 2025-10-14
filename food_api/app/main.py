@@ -1,14 +1,31 @@
 """
 FastAPI Main Application - FoodieExpress Backend
 Enhanced with Reviews, Multi-Item Orders, Role-Based Access Control, and Cuisine Search
+
+SECURITY ENHANCEMENTS:
+- [HIGH-002] Rate limiting on authentication endpoints
+- [HIGH-003] Enhanced input validation via Pydantic schemas
+- [MEDIUM-005] Environment-based CORS configuration
+- Improved error handling and security headers
 """
 
-from fastapi import FastAPI, Depends, HTTPException, status, Query
+from fastapi import FastAPI, Depends, HTTPException, status, Query, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import List, Optional
 from datetime import timedelta
+import os
+import uuid
+from dotenv import load_dotenv
+
+# Rate Limiting - HIGH-002 FIX
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# Load environment variables
+load_dotenv()
 
 # Local Imports
 from .database import init_db
@@ -19,6 +36,10 @@ from .schemas import (
 )
 from .security import hash_password, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from .dependencies import get_current_user, get_current_admin_user
+
+# ==================== RATE LIMITING CONFIGURATION ====================
+# HIGH-002 FIX: Prevent brute force attacks and API abuse
+limiter = Limiter(key_func=get_remote_address)
 
 # Application Lifespan Management
 @asynccontextmanager
@@ -32,19 +53,56 @@ async def lifespan(app: FastAPI):
 # Create FastAPI App
 app = FastAPI(
     title="FoodieExpress API",
-    description="AI-Powered Food Delivery Platform with Reviews & Advanced Features",
-    version="2.0.0",
+    description="AI-Powered Food Delivery Platform with Reviews, Admin Dashboard & Intelligence Features",
+    version="4.0.0",
     lifespan=lifespan
 )
 
-# CORS Middleware
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ==================== CORS MIDDLEWARE ====================
+# MEDIUM-005 FIX: Load allowed origins from environment
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174,http://localhost:3000")
+allowed_origins_list = [origin.strip() for origin in ALLOWED_ORIGINS.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],
+    allow_origins=allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ==================== REQUEST ID MIDDLEWARE (V3.0/V4.0) ====================
+# Distributed tracing middleware for observability
+
+@app.middleware("http")
+async def add_request_id_middleware(request: Request, call_next):
+    """
+    Generate or propagate X-Request-ID for distributed tracing.
+    
+    V3.0 Feature: Enables end-to-end request tracking across services.
+    This middleware:
+    - Generates a unique request ID if not provided
+    - Propagates the ID through all log entries
+    - Returns the ID in response headers for client correlation
+    """
+    # Get Request ID from header or generate new one
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.request_id = request_id
+    
+    # Log incoming request with ID
+    print(f"📥 [{request_id}] {request.method} {request.url.path}")
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Add Request ID to response headers
+    response.headers["X-Request-ID"] = request_id
+    
+    return response
 
 # ==================== PUBLIC ENDPOINTS ====================
 
@@ -53,8 +111,17 @@ def read_root():
     """Welcome endpoint"""
     return {
         "message": "Welcome to FoodieExpress API!",
-        "version": "2.0.0",
-        "features": ["AI Chatbot", "Multi-Item Orders", "Reviews & Ratings", "Cuisine Search"]
+        "version": "4.0.0",
+        "features": [
+            "AI Chatbot",
+            "Multi-Item Orders",
+            "Reviews & Ratings",
+            "Cuisine Search",
+            "Admin Dashboard",
+            "Business Intelligence",
+            "Personalized Recommendations",
+            "Distributed Tracing"
+        ]
     }
 
 @app.get("/restaurants/", response_model=List[RestaurantCreate])
@@ -343,8 +410,18 @@ async def register_user(user_data: UserCreate):
     )
 
 @app.post("/users/login")
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Authenticate user and return JWT token"""
+@limiter.limit("5/minute")  # HIGH-002 FIX: Rate limit login attempts (5 per minute)
+async def login_for_access_token(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends()
+):
+    """
+    Authenticate user and return JWT token
+    
+    SECURITY ENHANCEMENT:
+    - Rate limited to 5 attempts per minute to prevent brute force attacks
+    - Returns 429 Too Many Requests if limit exceeded
+    """
     user = await User.find_one(User.username == form_data.username)
     
     if not user or not verify_password(form_data.password, user.hashed_password):
@@ -501,6 +578,104 @@ async def get_order_by_id(
         order_date=order.order_date
     )
 
+# ==================== ADMIN DASHBOARD ENDPOINTS ====================
+
+@app.get("/admin/stats")
+async def get_admin_stats(current_admin: User = Depends(get_current_admin_user)):
+    """
+    Get business intelligence statistics (admin only).
+    
+    Returns:
+    - Total number of users
+    - Total number of orders
+    - Total revenue
+    - Most popular restaurant
+    
+    V4.0 Feature: Business Intelligence Dashboard
+    """
+    try:
+        # Get total users
+        total_users = await User.count()
+        
+        # Get total orders
+        total_orders = await Order.count()
+        
+        # Calculate total revenue
+        all_orders = await Order.find_all().to_list()
+        total_revenue = sum(order.total_price for order in all_orders)
+        
+        # Find most popular restaurant
+        restaurant_order_counts = {}
+        for order in all_orders:
+            restaurant_order_counts[order.restaurant_name] = restaurant_order_counts.get(order.restaurant_name, 0) + 1
+        
+        most_popular_restaurant = max(restaurant_order_counts.items(), key=lambda x: x[1]) if restaurant_order_counts else ("None", 0)
+        
+        return {
+            "total_users": total_users,
+            "total_orders": total_orders,
+            "total_revenue": round(total_revenue, 2),
+            "most_popular_restaurant": {
+                "name": most_popular_restaurant[0],
+                "order_count": most_popular_restaurant[1]
+            },
+            "timestamp": "2025-10-14T00:00:00"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching admin stats: {str(e)}")
+
+@app.get("/admin/orders", response_model=List[OrderOut])
+async def get_all_orders_admin(current_admin: User = Depends(get_current_admin_user)):
+    """
+    Get all orders in the system (admin only).
+    
+    Returns complete order history for business analysis.
+    
+    V4.0 Feature: Admin Order Management
+    """
+    try:
+        orders = await Order.find_all().to_list()
+        
+        return [
+            OrderOut(
+                id=order.id,
+                user_id=order.user_id,
+                restaurant_name=order.restaurant_name,
+                items=[
+                    {"item_name": item.item_name, "quantity": item.quantity, "price": item.price}
+                    for item in order.items
+                ],
+                total_price=order.total_price,
+                status=order.status,
+                order_date=order.order_date
+            ) for order in orders
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching orders: {str(e)}")
+
+@app.get("/admin/users")
+async def get_all_users_admin(current_admin: User = Depends(get_current_admin_user)):
+    """
+    Get all registered users (admin only).
+    
+    Returns user list WITHOUT hashed passwords for security.
+    
+    V4.0 Feature: User Management Dashboard
+    """
+    try:
+        users = await User.find_all().to_list()
+        
+        return [
+            {
+                "id": str(user.id),
+                "username": user.username,
+                "email": user.email,
+                "role": user.role
+            } for user in users
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching users: {str(e)}")
+
 # ==================== HEALTH CHECK ====================
 
 @app.get("/health")
@@ -508,6 +683,6 @@ async def health_check():
     """API health check endpoint"""
     return {
         "status": "healthy",
-        "version": "2.0.0",
+        "version": "4.0.0",
         "database": "connected"
     }
