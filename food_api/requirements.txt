@@ -3,3 +3,9 @@ beanie
 motor
 passlib[bcrypt]
 python-jose[cryptography]
+python-dotenv
+slowapi
+pytest
+pytest-asyncio
+pytest-cov
+httpx

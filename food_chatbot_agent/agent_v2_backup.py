@@ -1,17 +1,10 @@
 """
-AI Food Delivery Chatbot Agent - V4.0
+AI Food Delivery Chatbot Agent - V2.2
 Built with Google Gemini AI and Flask
-Enhanced with Personalized Recommendations & Business Intelligence
+Enhanced with Reviews, Multi-Item Orders, and Cuisine Search
 
-V4.0 FEATURES:
-- Personalized AI greetings based on user history
-- Proactive review requests after orders
-- Admin dashboard integration
-- Enhanced user engagement
-
-PREVIOUS ENHANCEMENTS:
-- Reviews, Multi-Item Orders, and Cuisine Search
-- Redis session storage for scalability
+SECURITY ENHANCEMENTS:
+- [HIGH-001] Added Redis session storage proposal for scalability
 - Environment variable validation
 - Improved session management architecture
 
@@ -826,13 +819,12 @@ def chat():
     Process chat message and return AI response.
     
     PHASE 1.2 & 1.3: SEAMLESS SINGLE SIGN-ON IMPLEMENTATION
-    PHASE 3 (V4.0): PERSONALIZED AI GREETINGS & RECOMMENDATIONS
     
     This endpoint now extracts the JWT token from the Authorization header,
     eliminating the need for users to log in twice (once on website, once in chat).
     
-    V4.0 Enhancement: When authenticated users start a new session, the agent
-    greets them by name and offers personalized suggestions based on their order history.
+    The token is automatically passed to all tools that require authentication,
+    enabling a seamless user experience.
     """
     try:
         data = request.json
@@ -861,89 +853,6 @@ def chat():
         # Initialize chat session if not exists
         if user_id not in chat_sessions:
             chat_sessions[user_id] = []
-        
-        # ==================== V4.0: PERSONALIZED GREETING ====================
-        # When authenticated user starts a NEW session, provide personalized greeting
-        is_new_session = len(chat_sessions[user_id]) == 0
-        personalized_greeting = None
-        
-        if is_new_session and token:
-            app.logger.info(f"🎉 V4.0: New authenticated session detected - generating personalized greeting")
-            
-            try:
-                # Get user info from /users/me
-                headers = {"Authorization": f"Bearer {token}"}
-                user_response = requests.get(f"{FASTAPI_BASE_URL}/users/me", headers=headers, timeout=5)
-                
-                if user_response.status_code == 200:
-                    user_info = user_response.json()
-                    username = user_info.get('username', 'Friend')
-                    
-                    # Get recent orders
-                    orders_response = requests.get(f"{FASTAPI_BASE_URL}/orders/", headers=headers, timeout=5)
-                    
-                    if orders_response.status_code == 200:
-                        orders = orders_response.json()
-                        
-                        if orders and len(orders) > 0:
-                            # User has order history - personalized with last order
-                            last_order = orders[-1]  # Most recent order
-                            last_restaurant = last_order.get('restaurant_name', 'your favorite restaurant')
-                            
-                            personalized_greeting = f"""Welcome back, {username}! 👋✨
-
-I see your last order was from **{last_restaurant}**. Are you in the mood for that again, or would you like to explore something new today? 🍽️
-
-💡 I can help you:
-• 🔍 Search for specific dishes
-• 🏪 Browse restaurants by cuisine
-• 📝 View your order history
-• ⭐ Leave reviews
-
-What sounds good today?"""
-                        else:
-                            # First-time orderer - welcome message
-                            personalized_greeting = f"""Welcome to FoodieExpress, {username}! 👋🎉
-
-I'm so excited to help you discover delicious food! As a new customer, I'd love to help you explore our restaurants. 🍽️
-
-💡 Let's get started! You can:
-• 🔍 Tell me what you're craving (e.g., "I want pizza")
-• 🏪 Browse restaurants by cuisine
-• ⭐ Check out reviews from other customers
-
-What are you in the mood for today?"""
-                    else:
-                        # Could not fetch orders - generic welcome
-                        personalized_greeting = f"""Welcome back, {username}! 👋
-
-Ready to order some delicious food? Let me know what you're craving! 🍽️"""
-                    
-                    app.logger.info(f"✅ V4.0: Personalized greeting generated for {username}")
-                else:
-                    app.logger.warning(f"⚠️ V4.0: Could not fetch user info (status {user_response.status_code})")
-            
-            except Exception as e:
-                app.logger.error(f"❌ V4.0: Error generating personalized greeting: {e}")
-                # Fall back to normal chat flow if personalization fails
-        
-        # If we have a personalized greeting, return it immediately
-        if personalized_greeting:
-            chat_sessions[user_id].append({
-                "role": "user",
-                "parts": [user_message]
-            })
-            chat_sessions[user_id].append({
-                "role": "model",
-                "parts": [personalized_greeting]
-            })
-            
-            return jsonify({
-                "response": personalized_greeting,
-                "personalized": True
-            })
-        
-        # ==================== CONTINUE WITH NORMAL CHAT FLOW ====================
         
         # PHASE 1.3 & 3: Enhanced system instruction with seamless auth + improved UX
         system_instruction = """You are a friendly and enthusiastic food delivery assistant! 🍕
@@ -1295,16 +1204,13 @@ def root():
     """Root endpoint - provides API information"""
     return jsonify({
         "service": "AI Food Delivery Chatbot Agent",
-        "version": "4.0.0",
+        "version": "2.0.0",
         "status": "running",
         "features": [
             "Multi-Item Orders",
             "Restaurant Reviews & Ratings",
             "Cuisine-Based Search",
-            "Order History Tracking",
-            "Personalized Greetings",
-            "Proactive Review Requests",
-            "Admin Dashboard Support"
+            "Order History Tracking"
         ],
         "endpoints": {
             "chat": "POST /chat",
@@ -1327,9 +1233,9 @@ def health():
     """Health check endpoint"""
     return jsonify({
         "status": "ok",
-        "service": "AI Food Delivery Agent v4.0",
+        "service": "AI Food Delivery Agent v2.0",
         "fastapi_backend": FASTAPI_BASE_URL,
-        "features": ["Reviews", "Multi-Item Orders", "Cuisine Search", "Personalization", "Admin Dashboard"]
+        "features": ["Reviews", "Multi-Item Orders", "Cuisine Search"]
     })
 
 
@@ -1352,19 +1258,17 @@ def clear_session():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("🤖 FoodieExpress AI Agent v4.0")
+    print("🤖 FoodieExpress AI Agent v2.0")
     print("=" * 60)
     print(f"✅ Google Gemini AI: Configured")
     print(f"✅ FastAPI Backend: {FASTAPI_BASE_URL}")
     print(f"✅ Agent Server: http://localhost:5000")
     print("=" * 60)
-    print("🌟 V4.0 Features:")
-    print("  🎯 Personalized AI Greetings")
+    print("🌟 New Features:")
     print("  ⭐ Restaurant Reviews & Ratings")
     print("  🛒 Multi-Item Orders")
     print("  🔍 Cuisine-Based Search")
     print("  📊 Review Statistics")
-    print("  📈 Admin Dashboard Support")
     print("=" * 60)
     print("📡 Available Endpoints:")
     print("  POST /chat          - Process chat messages")
