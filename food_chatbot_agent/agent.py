@@ -264,11 +264,11 @@ def get_all_restaurants() -> str:
             total_count = len(restaurants)
             
             # Format as a DIRECT, non-paraphrasable list
-            result = f"� SHOWING ALL {total_count} RESTAURANTS:\n\n"
+            result = f"� SHOWING ALL Available RESTAURANTS:\n\n"
             
             for idx, restaurant in enumerate(restaurants, 1):
                 result += f"═══════════════════════════════════════\n"
-                result += f"🔸 RESTAURANT #{idx} OF {total_count}\n"
+                result += f"🔸#{idx} RESTAURANT \n"
                 result += f"🏪 Name: {restaurant['name']}\n"
                 result += f"📍 Area: {restaurant['area']}\n"
                 result += f"🍴 Cuisine: {restaurant.get('cuisine', 'N/A')}\n"
