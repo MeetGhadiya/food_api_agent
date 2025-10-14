@@ -264,17 +264,17 @@ def get_all_restaurants() -> str:
             total_count = len(restaurants)
             
             # Format as a DIRECT, non-paraphrasable list
-            result = f"� SHOWING ALL Available RESTAURANTS:\n\n"
+            result = "📋 SHOWING ALL Available RESTAURANTS:\n\n"
             
             for idx, restaurant in enumerate(restaurants, 1):
-                result += f"═══════════════════════════════════════\n"
-                result += f"🔸#{idx} RESTAURANT \n"
+                result += "═══════════════════════════════════════\n"
+                result += f"🔸#{idx} RESTAURANT\n"
                 result += f"🏪 Name: {restaurant['name']}\n"
                 result += f"📍 Area: {restaurant['area']}\n"
                 result += f"🍴 Cuisine: {restaurant.get('cuisine', 'N/A')}\n"
             
-            result += f"═══════════════════════════════════════\n"
-            result += f"\n💡 Want to see the menu? Just ask about any restaurant!"
+            result += "═══════════════════════════════════════\n"
+            result += "\n💡 Want to see the menu? Just ask about any restaurant!"
 
             return result
         else:
@@ -923,8 +923,31 @@ Make the experience delightful and intelligent! 🌟"""
             system_instruction=system_instruction
         )
         
-        # REMOVED: Pre-detection logic that was causing issues
-        # We'll let the AI decide when to call functions naturally
+        # ==================== CRITICAL FIX: FORCE FUNCTION CALLING FOR LIST REQUESTS ====================
+        # Pre-detect list requests and directly call the function, bypassing AI decision
+        user_message_lower = user_message.lower()
+        list_keywords = ['list', 'show all', 'browse', 'see all', 'get all', 'display all', 'all restaurant']
+        
+        if any(keyword in user_message_lower for keyword in list_keywords) and 'restaurant' in user_message_lower:
+            app.logger.info(f"🎯 DETECTED LIST REQUEST - Directly calling get_all_restaurants() without AI")
+            
+            # Call the function directly
+            function_result = get_all_restaurants()
+            
+            # Add to chat history
+            chat_sessions[user_id].append({
+                "role": "user",
+                "parts": [user_message]
+            })
+            chat_sessions[user_id].append({
+                "role": "model",
+                "parts": [function_result]
+            })
+            
+            return jsonify({
+                "response": function_result,
+                "function_called": "get_all_restaurants"
+            })
         
         # Normal AI processing for other queries
         # Add user message to history
