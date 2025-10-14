@@ -104,6 +104,48 @@ async def get_restaurant_by_name(restaurant_name: str):
         items=restaurant.items
     )
 
+@app.get("/search/items", response_model=List[RestaurantCreate])
+async def search_restaurants_by_item(item_name: str = Query(..., description="Name of the menu item to search for")):
+    """
+    Search for restaurants that serve a specific menu item.
+    
+    This endpoint performs a case-insensitive search across all restaurant menus
+    to find which restaurants offer the specified item.
+    
+    Query Parameters:
+    - item_name: The name of the food item to search for (e.g., "Pizza", "Dhokla", "Bhel")
+    
+    Examples:
+    - GET /search/items?item_name=Pizza
+    - GET /search/items?item_name=dhokla (case-insensitive)
+    
+    Returns:
+    - List of restaurants that have the item on their menu
+    """
+    try:
+        # Use MongoDB $elemMatch with case-insensitive regex to search within items array
+        # This efficiently finds documents where at least one item in the array matches
+        query = {
+            "items": {
+                "$elemMatch": {
+                    "item_name": {"$regex": f"^{item_name}$", "$options": "i"}
+                }
+            }
+        }
+        
+        restaurants = await Restaurant.find(query).to_list()
+        
+        return [
+            RestaurantCreate(
+                name=r.name,
+                area=r.area,
+                cuisine=r.cuisine,
+                items=r.items
+            ) for r in restaurants
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error searching for item: {str(e)}")
+
 # ==================== REVIEW ENDPOINTS ====================
 
 @app.post("/restaurants/{restaurant_name}/reviews", response_model=ReviewOut, status_code=status.HTTP_201_CREATED)
@@ -338,14 +380,35 @@ async def create_order(
 ):
     """
     Create a new multi-item order (requires authentication).
+    
+    PHASE 2: ORDER PLACEMENT DEBUG & FIX
+    
+    Enhanced with detailed logging to debug order placement issues.
     """
+    # PHASE 2: Detailed logging
+    print("\n" + "="*60)
+    print("🎯 FASTAPI: ORDER CREATION REQUEST")
+    print("="*60)
+    print(f"👤 User ID: {current_user.id}")
+    print(f"👤 Username: {current_user.username}")
+    print(f"🏪 Restaurant: {order_data.restaurant_name}")
+    print(f"📦 Number of items: {len(order_data.items)}")
+    print(f"📋 Items:")
+    for idx, item in enumerate(order_data.items, 1):
+        print(f"   {idx}. {item.item_name} x {item.quantity} @ ₹{item.price}")
+    
     # Verify restaurant exists
     restaurant = await Restaurant.find_one(Restaurant.name == order_data.restaurant_name)
     if not restaurant:
+        print(f"❌ Restaurant '{order_data.restaurant_name}' not found in database")
+        print("="*60 + "\n")
         raise HTTPException(status_code=404, detail="Restaurant not found")
+    
+    print(f"✅ Restaurant found: {restaurant.name}")
     
     # Calculate total price
     total_price = sum(item.price * item.quantity for item in order_data.items)
+    print(f"💰 Calculated total: ₹{total_price:.2f}")
     
     # Create order items
     order_items = [
@@ -356,6 +419,8 @@ async def create_order(
         ) for item in order_data.items
     ]
     
+    print(f"✅ Order items created: {len(order_items)}")
+    
     # Create order
     order = Order(
         user_id=current_user.id,
@@ -364,7 +429,17 @@ async def create_order(
         total_price=total_price,
         status="placed"
     )
-    await order.insert()
+    
+    print(f"📝 Attempting to save order to database...")
+    
+    try:
+        await order.insert()
+        print(f"✅ Order saved successfully! Order ID: {order.id}")
+        print("="*60 + "\n")
+    except Exception as e:
+        print(f"❌ Failed to save order to database: {str(e)}")
+        print("="*60 + "\n")
+        raise HTTPException(status_code=500, detail=f"Failed to create order: {str(e)}")
     
     return OrderOut(
         id=order.id,
