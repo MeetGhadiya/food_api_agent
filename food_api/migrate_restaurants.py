@@ -14,8 +14,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from app.models import Restaurant
+import os
 
-MONGODB_URL = "mongodb://localhost:27017/food_db.6z9sntm.mongodb.net/?retryWrites=true&w=majority&appName=FoodAPICluster"
+# MongoDB connection - use environment variable for security
+MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 
 async def migrate_restaurants():
     client = AsyncIOMotorClient(MONGODB_URL, tlsAllowInvalidCertificates=True)
