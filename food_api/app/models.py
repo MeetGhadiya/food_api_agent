@@ -44,13 +44,21 @@ class Order(Document):
     class Settings:
         name = "orders"
 
-# NEW: Review model for restaurant reviews
+# V4.0: Enhanced Review model for restaurant reviews
 class Review(Document):
     user_id: PydanticObjectId
+    username: str  # Denormalized for display purposes
     restaurant_name: str
     rating: int  # Rating from 1 to 5
     comment: str
     review_date: datetime = Field(default_factory=datetime.utcnow)
+    helpful_count: int = 0  # Future feature: track helpful votes
+    is_verified_purchase: bool = False  # Future feature: verify order exists
 
     class Settings:
         name = "reviews"
+        indexes = [
+            "user_id",
+            "restaurant_name",
+            [("restaurant_name", 1), ("review_date", -1)]  # For efficient queries
+        ]

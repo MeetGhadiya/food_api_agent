@@ -55,6 +55,8 @@ FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://localhost:8000")
 # TEMPORARY: In-memory storage (for development only)
 chat_sessions: Dict[str, list] = {}
 pending_orders: Dict[str, Dict[str, Any]] = {}
+# V4.0: Track recent orders for proactive review prompts
+recent_orders: Dict[str, Dict[str, Any]] = {}  # {user_id: {restaurant_name, order_id, turns_since_order}}
 
 # ==================== REDIS SESSION STORE (RECOMMENDED) ====================
 # TODO: Implement Redis-based session storage for production
@@ -327,6 +329,20 @@ function_declarations = [
             },
             required=["username", "password"]
         )
+    ),
+    genai.protos.FunctionDeclaration(
+        name="get_my_reviews",
+        description="V4.0: Get all reviews written by the current authenticated user. Use when user wants to see their reviews, review history, or what they've reviewed.",
+        parameters=genai.protos.Schema(
+            type=genai.protos.Type.OBJECT,
+            properties={
+                "token": genai.protos.Schema(
+                    type=genai.protos.Type.STRING,
+                    description="User authentication token"
+                )
+            },
+            required=["token"]
+        )
     )
 ]
 
@@ -567,6 +583,15 @@ def place_order(restaurant_name: str, items: List[Dict[str, Any]], token: str) -
         # Handle response
         if response.status_code == 201 or response.status_code == 200:
             order = response.json()
+            
+            # V4.0: Store order info for proactive review prompts
+            user_id = token[:16]  # Use token prefix as user identifier
+            recent_orders[user_id] = {
+                'restaurant_name': order.get('restaurant_name', restaurant_name),
+                'order_id': order.get('id', 'N/A'),
+                'turns_since_order': 0
+            }
+            
             result = "✅ **Order Placed Successfully!** 🎉\n\n"
             result += f"🏪 Restaurant: {order.get('restaurant_name', restaurant_name)}\n"
             result += f"📝 Order ID: #{order.get('id', 'N/A')}\n\n"
@@ -803,6 +828,42 @@ def login_user(username: str, password: str) -> str:
         })
 
 
+def get_my_reviews(token: str) -> str:
+    """
+    V4.0: Get all reviews written by the current user.
+    Returns a formatted list of the user's review history.
+    """
+    try:
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.get(f"{FASTAPI_BASE_URL}/users/me/reviews", headers=headers)
+        
+        if response.status_code == 200:
+            reviews = response.json()
+            
+            if not reviews:
+                return "📝 You haven't written any reviews yet.\n\n💡 After you order from a restaurant, I'll ask if you'd like to leave a review! ⭐"
+            
+            result = f"📝 **Your Review History** ({len(reviews)} review(s))\n\n"
+            
+            for idx, review in enumerate(reviews, 1):
+                stars = "⭐" * review['rating']
+                verified = " ✓ Verified Purchase" if review.get('is_verified_purchase') else ""
+                result += f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                result += f"**{idx}. {review['restaurant_name']}**{verified}\n"
+                result += f"{stars} ({review['rating']}/5)\n"
+                result += f"💬 \"{review['comment']}\"\n"
+                result += f"📅 {review['review_date'][:10]}\n"
+            
+            result += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            return result
+        elif response.status_code == 401:
+            return "🔒 Please log in to see your reviews."
+        else:
+            return f"❌ Error fetching reviews: {response.status_code}"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+
 # Map function names to actual functions
 available_functions = {
     "get_all_restaurants": get_all_restaurants,
@@ -815,7 +876,8 @@ available_functions = {
     "get_reviews": get_reviews,
     "get_review_stats": get_review_stats,
     "register_user": register_user,
-    "login_user": login_user
+    "login_user": login_user,
+    "get_my_reviews": get_my_reviews
 }
 
 # ==================== CHAT ENDPOINT ====================
@@ -1278,6 +1340,43 @@ Make the experience delightful and intelligent! 🌟"""
                 "parts": [text_response]
             })
             
+            # ==================== V4.0: PROACTIVE REVIEW PROMPTS ====================
+            # After 2-3 turns since order, proactively ask for review
+            if token and user_id in recent_orders:
+                recent_order = recent_orders[user_id]
+                recent_order['turns_since_order'] += 1
+                
+                # Prompt after 2 conversational turns
+                if recent_order['turns_since_order'] == 2:
+                    restaurant_name = recent_order['restaurant_name']
+                    app.logger.info(f"🌟 V4.0: Proactive review prompt for {restaurant_name}")
+                    
+                    # Check if user already reviewed this restaurant
+                    try:
+                        headers = {"Authorization": f"Bearer {token}"}
+                        check_response = requests.get(
+                            f"{FASTAPI_BASE_URL}/reviews/user-restaurant-review/{restaurant_name}",
+                            headers=headers,
+                            timeout=5
+                        )
+                        
+                        if check_response.status_code == 404:
+                            # No review yet - add prompt
+                            review_prompt = f"\n\n---\n\n💫 **By the way**, how was your experience with **{restaurant_name}**? I'd love to hear your feedback! ⭐\n\nYou can say something like: *'Rate {restaurant_name} 5 stars'* or *'Review {restaurant_name}'*"
+                            text_response += review_prompt
+                            app.logger.info(f"✅ V4.0: Added proactive review prompt")
+                        else:
+                            # Already reviewed - clear from tracking
+                            del recent_orders[user_id]
+                            app.logger.info(f"✅ V4.0: User already reviewed, skipping prompt")
+                    except Exception as e:
+                        app.logger.warning(f"⚠️ V4.0: Could not check review status: {e}")
+                
+                # Clear tracking after 5 turns to avoid repeated prompts
+                elif recent_order['turns_since_order'] >= 5:
+                    del recent_orders[user_id]
+                    app.logger.info(f"🗑️ V4.0: Cleared order tracking after 5 turns")
+            
             return jsonify({"response": text_response})
             
     except Exception as e:
@@ -1378,8 +1477,8 @@ if __name__ == '__main__':
         # Use waitress for production-ready serving
         from waitress import serve
         print("✅ Waitress imported successfully")
-        print(f"🔗 Binding to 127.0.0.1:5000...")
-        serve(app, host='127.0.0.1', port=5000, threads=4)
+        print(f"🔗 Binding to 0.0.0.0:5000...")
+        serve(app, host='0.0.0.0', port=5000, threads=4)
         print("⚠️ Server stopped")
     except Exception as e:
         print(f"❌ ERROR: {e}")

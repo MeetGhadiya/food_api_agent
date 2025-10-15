@@ -6,6 +6,7 @@ Shared test fixtures for the FoodieExpress test suite
 import pytest
 import asyncio
 from httpx import AsyncClient
+from fastapi.testclient import TestClient
 from app.main import app
 from app.database import init_db
 from app.models import User, Restaurant, Order, Review
@@ -26,6 +27,12 @@ async def setup_database():
     await init_db()
     yield
     # Cleanup after tests if needed
+
+
+@pytest.fixture
+def client():
+    """Create a synchronous HTTP client for testing FastAPI endpoints"""
+    return TestClient(app)
 
 
 @pytest.fixture
@@ -77,9 +84,9 @@ async def test_admin():
 
 
 @pytest.fixture
-async def auth_token(async_client, test_user):
+def auth_token(client, test_user):
     """Get an authentication token for a test user"""
-    response = await async_client.post(
+    response = client.post(
         "/users/login",
         data={
             "username": test_user.username,
@@ -88,6 +95,12 @@ async def auth_token(async_client, test_user):
     )
     assert response.status_code == 200
     return response.json()["access_token"]
+
+
+@pytest.fixture
+def sample_restaurant():
+    """Create a test restaurant (alias for test_restaurant)"""
+    return test_restaurant()
 
 
 @pytest.fixture

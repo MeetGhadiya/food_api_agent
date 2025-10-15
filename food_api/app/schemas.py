@@ -215,12 +215,19 @@ class OrderOut(BaseModel):
 class ReviewCreate(BaseModel):
     """
     Review creation schema with strict validation
+    V4.0: Enhanced with restaurant_name field
     
     SECURITY FIXES:
     - [HIGH-003] Added rating range validation (1-5)
     - Added maximum comment length to prevent abuse
     - Added XSS protection through field validation
     """
+    restaurant_name: str = Field(
+        ...,
+        min_length=2,
+        max_length=100,
+        description="Name of the restaurant being reviewed"
+    )
     rating: int = Field(
         ...,
         ge=1,
@@ -230,8 +237,8 @@ class ReviewCreate(BaseModel):
     comment: str = Field(
         ...,
         min_length=10,
-        max_length=500,
-        description="Review comment (10-500 characters)"
+        max_length=1000,
+        description="Review comment (10-1000 characters)"
     )
     
     @field_validator('comment')
@@ -258,14 +265,89 @@ class ReviewCreate(BaseModel):
         
         return sanitized.strip()
 
+class ReviewUpdate(BaseModel):
+    """V4.0: Schema for updating existing reviews"""
+    rating: Optional[int] = Field(
+        None,
+        ge=1,
+        le=5,
+        description="Updated rating from 1 to 5 stars"
+    )
+    comment: Optional[str] = Field(
+        None,
+        min_length=10,
+        max_length=1000,
+        description="Updated review comment (10-1000 characters)"
+    )
+    
+    @field_validator('comment')
+    @classmethod
+    def sanitize_comment(cls, v: Optional[str]) -> Optional[str]:
+        """Sanitize review comment to prevent XSS attacks"""
+        if v is None:
+            return v
+        
+        # Remove common XSS patterns
+        dangerous_patterns = [
+            r'<script[^>]*>.*?</script>',
+            r'javascript:',
+            r'on\w+\s*=',
+            r'<iframe[^>]*>.*?</iframe>',
+        ]
+        
+        sanitized = v
+        for pattern in dangerous_patterns:
+            sanitized = re.sub(pattern, '', sanitized, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Remove HTML tags but keep the content
+        sanitized = re.sub(r'<[^>]+>', '', sanitized)
+        
+        return sanitized.strip()
+
 class ReviewOut(BaseModel):
-    """Review output schema"""
+    """V4.0: Enhanced review output schema"""
     id: PydanticObjectId
     user_id: PydanticObjectId
+    username: str
     restaurant_name: str
     rating: int
     comment: str
     review_date: datetime
+    helpful_count: int
+    is_verified_purchase: bool
 
     class Config:
         from_attributes = True
+
+# ==================== ADMIN SCHEMAS (V4.0) ====================
+
+class PlatformStatsOut(BaseModel):
+    """V4.0: Platform statistics for admin dashboard"""
+    total_users: int
+    total_orders: int
+    total_revenue: float
+    orders_today: int
+    revenue_today: float
+    active_users_last_7_days: int
+    total_reviews: int
+    average_rating: float
+
+class PopularRestaurantOut(BaseModel):
+    """V4.0: Popular restaurant statistics"""
+    restaurant_name: str
+    total_orders: int
+    total_revenue: float
+    average_rating: Optional[float]
+    total_reviews: int
+
+class UserActivityOut(BaseModel):
+    """V4.0: User activity statistics for admin"""
+    user_id: PydanticObjectId
+    username: str
+    email: EmailStr
+    role: str
+    total_orders: int
+    total_spent: float
+    last_order_date: Optional[datetime]
+    registration_date: Optional[datetime]
+

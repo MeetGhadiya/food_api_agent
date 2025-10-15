@@ -19,13 +19,14 @@ load_dotenv()
 
 # ==================== SECURITY: ENVIRONMENT VARIABLES ====================
 # CRITICAL-001 FIX: Load database URL from environment
-MONGO_DATABASE_URL = os.getenv("MONGO_DATABASE_URL")
+# Support both MONGODB_URI (new) and MONGO_DATABASE_URL (legacy) for backward compatibility
+MONGO_DATABASE_URL = os.getenv("MONGODB_URI") or os.getenv("MONGO_DATABASE_URL")
 
 if not MONGO_DATABASE_URL:
     raise ValueError(
-        "❌ CRITICAL ERROR: MONGO_DATABASE_URL not found in environment variables!\n"
-        "Please set MONGO_DATABASE_URL in your .env file.\n"
-        "See .env.example for the required format."
+        "❌ CRITICAL ERROR: MONGODB_URI not found in environment variables!\n"
+        "Please set MONGODB_URI in your .env file.\n"
+        "Example: MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/foodie_db"
     )
 
 # ==================== DATABASE CONNECTION ====================

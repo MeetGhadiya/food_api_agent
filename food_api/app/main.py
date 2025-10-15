@@ -32,7 +32,8 @@ from .database import init_db
 from .models import Restaurant, User, Order, Review, OrderItem
 from .schemas import (
     RestaurantCreate, UserCreate, UserOut, OrderCreate, OrderOut,
-    ReviewCreate, ReviewOut, RestaurantItem
+    ReviewCreate, ReviewUpdate, ReviewOut, RestaurantItem,
+    PlatformStatsOut, PopularRestaurantOut, UserActivityOut
 )
 from .security import hash_password, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from .dependencies import get_current_user, get_current_admin_user
@@ -222,21 +223,29 @@ async def create_review(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Submit a review for a restaurant (requires authentication).
+    V4.0: Submit a review for a restaurant (requires authentication).
     
     Parameters:
     - restaurant_name: Name of the restaurant
     - rating: 1-5 stars
-    - comment: Review text
+    - comment: Review text (10-1000 characters)
+    
+    Features:
+    - Prevents duplicate reviews
+    - Validates restaurant exists
+    - Stores username for display
     """
     # Verify restaurant exists
     restaurant = await Restaurant.find_one(Restaurant.name == restaurant_name)
     if not restaurant:
         raise HTTPException(status_code=404, detail=f"Restaurant '{restaurant_name}' not found")
     
-    # Validate rating
-    if review_data.rating < 1 or review_data.rating > 5:
-        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+    # Validate that review_data.restaurant_name matches URL parameter
+    if review_data.restaurant_name != restaurant_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Restaurant name in URL must match restaurant name in request body"
+        )
     
     # Check if user already reviewed this restaurant
     existing_review = await Review.find_one(
@@ -246,48 +255,76 @@ async def create_review(
     if existing_review:
         raise HTTPException(
             status_code=400,
-            detail="You have already reviewed this restaurant. Please update your existing review instead."
+            detail="You have already reviewed this restaurant. Use PUT /reviews/{review_id} to update it."
         )
+    
+    # Check if user has ordered from this restaurant (for verified purchase)
+    user_order = await Order.find_one(
+        Order.user_id == current_user.id,
+        Order.restaurant_name == restaurant_name
+    )
+    is_verified = user_order is not None
     
     # Create review
     review = Review(
         user_id=current_user.id,
+        username=current_user.username,
         restaurant_name=restaurant_name,
         rating=review_data.rating,
-        comment=review_data.comment
+        comment=review_data.comment,
+        helpful_count=0,
+        is_verified_purchase=is_verified
     )
     await review.insert()
     
     return ReviewOut(
         id=review.id,
         user_id=review.user_id,
+        username=review.username,
         restaurant_name=review.restaurant_name,
         rating=review.rating,
         comment=review.comment,
-        review_date=review.review_date
+        review_date=review.review_date,
+        helpful_count=review.helpful_count,
+        is_verified_purchase=review.is_verified_purchase
     )
 
 @app.get("/restaurants/{restaurant_name}/reviews", response_model=List[ReviewOut])
-async def get_restaurant_reviews(restaurant_name: str):
+async def get_restaurant_reviews(
+    restaurant_name: str,
+    limit: int = Query(10, ge=1, le=100, description="Number of reviews to return"),
+    skip: int = Query(0, ge=0, description="Number of reviews to skip")
+):
     """
-    Get all reviews for a specific restaurant (public endpoint).
+    V4.0: Get all reviews for a specific restaurant (public endpoint with pagination).
+    
+    Query Parameters:
+    - limit: Maximum number of reviews to return (1-100, default 10)
+    - skip: Number of reviews to skip for pagination (default 0)
+    
+    Returns reviews sorted by date (newest first)
     """
     # Verify restaurant exists
     restaurant = await Restaurant.find_one(Restaurant.name == restaurant_name)
     if not restaurant:
         raise HTTPException(status_code=404, detail=f"Restaurant '{restaurant_name}' not found")
     
-    # Get all reviews
-    reviews = await Review.find(Review.restaurant_name == restaurant_name).to_list()
+    # Get paginated reviews, sorted by date (newest first)
+    reviews = await Review.find(
+        Review.restaurant_name == restaurant_name
+    ).sort(-Review.review_date).skip(skip).limit(limit).to_list()
     
     return [
         ReviewOut(
             id=review.id,
             user_id=review.user_id,
+            username=review.username,
             restaurant_name=review.restaurant_name,
             rating=review.rating,
             comment=review.comment,
-            review_date=review.review_date
+            review_date=review.review_date,
+            helpful_count=review.helpful_count,
+            is_verified_purchase=review.is_verified_purchase
         ) for review in reviews
     ]
 
@@ -320,6 +357,112 @@ async def get_restaurant_review_stats(restaurant_name: str):
         "average_rating": round(average_rating, 2),
         "rating_distribution": rating_distribution
     }
+
+@app.put("/reviews/{review_id}", response_model=ReviewOut)
+async def update_review(
+    review_id: str,
+    update_data: ReviewUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    V4.0: Update an existing review (owner only).
+    
+    Users can only update their own reviews.
+    Can update rating and/or comment.
+    """
+    from beanie import PydanticObjectId
+    
+    # Find the review
+    try:
+        review = await Review.get(PydanticObjectId(review_id))
+    except Exception:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    # Check ownership
+    if review.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only update your own reviews"
+        )
+    
+    # Update fields if provided
+    if update_data.rating is not None:
+        review.rating = update_data.rating
+    if update_data.comment is not None:
+        review.comment = update_data.comment
+    
+    await review.save()
+    
+    return ReviewOut(
+        id=review.id,
+        user_id=review.user_id,
+        username=review.username,
+        restaurant_name=review.restaurant_name,
+        rating=review.rating,
+        comment=review.comment,
+        review_date=review.review_date,
+        helpful_count=review.helpful_count,
+        is_verified_purchase=review.is_verified_purchase
+    )
+
+@app.delete("/reviews/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_review(
+    review_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    V4.0: Delete an existing review (owner only).
+    
+    Users can only delete their own reviews.
+    """
+    from beanie import PydanticObjectId
+    
+    # Find the review
+    try:
+        review = await Review.get(PydanticObjectId(review_id))
+    except Exception:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    # Check ownership
+    if review.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only delete your own reviews"
+        )
+    
+    await review.delete()
+    return None
+
+@app.get("/users/me/reviews", response_model=List[ReviewOut])
+async def get_my_reviews(current_user: User = Depends(get_current_user)):
+    """
+    V4.0: Get all reviews by the current authenticated user.
+    
+    Returns reviews sorted by date (newest first).
+    """
+    reviews = await Review.find(
+        Review.user_id == current_user.id
+    ).sort(-Review.review_date).to_list()
+    
+    return [
+        ReviewOut(
+            id=review.id,
+            user_id=review.user_id,
+            username=review.username,
+            restaurant_name=review.restaurant_name,
+            rating=review.rating,
+            comment=review.comment,
+            review_date=review.review_date,
+            helpful_count=review.helpful_count,
+            is_verified_purchase=review.is_verified_purchase
+        ) for review in reviews
+    ]
 
 # ==================== ADMIN-ONLY RESTAURANT MANAGEMENT ====================
 
@@ -580,47 +723,55 @@ async def get_order_by_id(
 
 # ==================== ADMIN DASHBOARD ENDPOINTS ====================
 
-@app.get("/admin/stats")
+@app.get("/admin/stats", response_model=PlatformStatsOut)
 async def get_admin_stats(current_admin: User = Depends(get_current_admin_user)):
     """
-    Get business intelligence statistics (admin only).
+    V4.0: Get comprehensive business intelligence statistics (admin only).
     
     Returns:
-    - Total number of users
-    - Total number of orders
-    - Total revenue
-    - Most popular restaurant
+    - Total users, orders, revenue
+    - Today's orders and revenue
+    - Active users (last 7 days)
+    - Review statistics
     
-    V4.0 Feature: Business Intelligence Dashboard
+    V4.0 Feature: Enhanced Business Intelligence Dashboard
     """
     try:
+        from datetime import datetime, timedelta
+        
         # Get total users
         total_users = await User.count()
         
-        # Get total orders
-        total_orders = await Order.count()
-        
-        # Calculate total revenue
+        # Get all orders
         all_orders = await Order.find_all().to_list()
+        total_orders = len(all_orders)
         total_revenue = sum(order.total_price for order in all_orders)
         
-        # Find most popular restaurant
-        restaurant_order_counts = {}
-        for order in all_orders:
-            restaurant_order_counts[order.restaurant_name] = restaurant_order_counts.get(order.restaurant_name, 0) + 1
+        # Calculate today's stats
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        orders_today = sum(1 for order in all_orders if order.order_date >= today_start)
+        revenue_today = sum(order.total_price for order in all_orders if order.order_date >= today_start)
         
-        most_popular_restaurant = max(restaurant_order_counts.items(), key=lambda x: x[1]) if restaurant_order_counts else ("None", 0)
+        # Calculate active users (last 7 days)
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        active_user_ids = set(order.user_id for order in all_orders if order.order_date >= seven_days_ago)
+        active_users_last_7_days = len(active_user_ids)
         
-        return {
-            "total_users": total_users,
-            "total_orders": total_orders,
-            "total_revenue": round(total_revenue, 2),
-            "most_popular_restaurant": {
-                "name": most_popular_restaurant[0],
-                "order_count": most_popular_restaurant[1]
-            },
-            "timestamp": "2025-10-14T00:00:00"
-        }
+        # Get review statistics
+        all_reviews = await Review.find_all().to_list()
+        total_reviews = len(all_reviews)
+        average_rating = sum(review.rating for review in all_reviews) / total_reviews if total_reviews > 0 else 0.0
+        
+        return PlatformStatsOut(
+            total_users=total_users,
+            total_orders=total_orders,
+            total_revenue=round(total_revenue, 2),
+            orders_today=orders_today,
+            revenue_today=round(revenue_today, 2),
+            active_users_last_7_days=active_users_last_7_days,
+            total_reviews=total_reviews,
+            average_rating=round(average_rating, 2)
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching admin stats: {str(e)}")
 
@@ -680,9 +831,21 @@ async def get_all_users_admin(current_admin: User = Depends(get_current_admin_us
 
 @app.get("/health")
 async def health_check():
-    """API health check endpoint"""
+    """
+    V4.0: API health check endpoint with database connectivity test.
+    
+    Used by Docker HEALTHCHECK and monitoring systems.
+    """
+    try:
+        # Test database connection by counting users
+        user_count = await User.count()
+        database_status = "connected"
+    except Exception as e:
+        database_status = f"error: {str(e)}"
+    
     return {
         "status": "healthy",
         "version": "4.0.0",
-        "database": "connected"
+        "database": database_status,
+        "features": ["reviews", "admin_dashboard", "ai_personalization", "docker"]
     }

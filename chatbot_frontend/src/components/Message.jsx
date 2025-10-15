@@ -1,7 +1,27 @@
 import React from 'react';
 import { Bot, User } from 'lucide-react';
+import ReviewCard from './ReviewCard';
 
 const Message = ({ message, isBot }) => {
+  // V4.0: Check if message contains review data (JSON format)
+  const parseReviewData = (text) => {
+    try {
+      // Look for JSON array pattern that might contain review data
+      const jsonMatch = text.match(/\[[\s\S]*?\]/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        // Check if it looks like review data
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].rating && parsed[0].comment) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      // Not JSON or not review data, continue normally
+    }
+    return null;
+  };
+
+  const reviewData = isBot ? parseReviewData(message) : null;
   const formatMessage = (text) => {
     if (!text) return '';
     
@@ -69,10 +89,20 @@ const Message = ({ message, isBot }) => {
             : 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg rounded-br-none'
         }`}
       >
-        <div
-          className="text-sm leading-relaxed break-words"
-          dangerouslySetInnerHTML={{ __html: formatMessage(message) }}
-        />
+        {/* V4.0: If review data detected, render ReviewCard components */}
+        {reviewData ? (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold mb-3">Reviews:</p>
+            {reviewData.map((review, index) => (
+              <ReviewCard key={index} review={review} />
+            ))}
+          </div>
+        ) : (
+          <div
+            className="text-sm leading-relaxed break-words"
+            dangerouslySetInnerHTML={{ __html: formatMessage(message) }}
+          />
+        )}
       </div>
       
       {!isBot && (
