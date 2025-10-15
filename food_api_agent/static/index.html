@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FoodieBot - Your Smart Food Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="platform-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-container">
+                    <i class="fas fa-pizza-slice logo-icon"></i>
+                    <div class="logo-text">
+                        <h1>FoodieBot</h1>
+                        <span class="tagline">AI Food Assistant</span>
+                    </div>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-view="chat">
+                    <i class="fas fa-comments"></i>
+                    <span>Chat</span>
+                </button>
+                <button class="nav-item" data-view="restaurants">
+                    <i class="fas fa-store"></i>
+                    <span>Restaurants</span>
+                </button>
+                <button class="nav-item" data-view="orders">
+                    <i class="fas fa-shopping-bag"></i>
+                    <span>My Orders</span>
+                </button>
+                <button class="nav-item" data-view="profile">
+                    <i class="fas fa-user"></i>
+                    <span>Profile</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-card" id="userCard" style="display: none;">
+                    <div class="user-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="user-details">
+                        <span class="user-name" id="sidebarUserName">Guest</span>
+                        <span class="user-status">Online</span>
+                    </div>
+                    <button class="logout-icon" id="sidebarLogout" title="Logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+                <button class="login-card" id="loginCard">
+                    <i class="fas fa-sign-in-alt"></i>
+                    <span>Login / Register</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header Bar -->
+            <header class="top-bar">
+                <div class="top-bar-left">
+                    <button class="menu-toggle" id="menuToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h2 class="page-title">Chat with FoodieBot</h2>
+                </div>
+                <div class="top-bar-right">
+                    <div class="status-indicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text">AI Online</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Chat View -->
+            <div class="view-container active" id="chatView">
+                <div class="chat-area">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="bot-intro">
+                            <div class="bot-avatar-large">
+                                <i class="fas fa-robot"></i>
+                            </div>
+                            <h2>Hey! I'm FoodieBot 🍔</h2>
+                            <p>Your personal AI food assistant. I can help you discover restaurants, explore menus, and place orders instantly!</p>
+                            
+                            <div class="feature-cards">
+                                <div class="feature-card">
+                                    <i class="fas fa-search"></i>
+                                    <h3>Discover</h3>
+                                    <p>Find the best restaurants near you</p>
+                                </div>
+                                <div class="feature-card">
+                                    <i class="fas fa-utensils"></i>
+                                    <h3>Explore</h3>
+                                    <p>Browse menus and cuisines</p>
+                                </div>
+                                <div class="feature-card">
+                                    <i class="fas fa-bolt"></i>
+                                    <h3>Order Fast</h3>
+                                    <p>Quick and easy ordering</p>
+                                </div>
+                            </div>
+
+                            <div class="quick-suggestions">
+                                <h3>Try asking me:</h3>
+                                <div class="suggestion-chips">
+                                    <button class="chip" data-message="Show me all restaurants">
+                                        <i class="fas fa-store"></i> Browse All
+                                    </button>
+                                    <button class="chip" data-message="Tell me about Pizza Palace">
+                                        <i class="fas fa-info-circle"></i> Restaurant Info
+                                    </button>
+                                    <button class="chip" data-message="I want to order Margherita pizza from Pizza Palace">
+                                        <i class="fas fa-shopping-cart"></i> Order Food
+                                    </button>
+                                    <button class="chip" data-message="Show my orders">
+                                        <i class="fas fa-list"></i> My Orders
+                                    </button>
+                                    <button class="chip" data-message="Create a new restaurant called Burger King in Downtown serving American food">
+                                        <i class="fas fa-plus-circle"></i> Add Restaurant
+                                    </button>
+                                    <button class="chip" data-message="Update Pizza Palace to Pizza Palace Premium in Uptown serving Italian food">
+                                        <i class="fas fa-edit"></i> Update Restaurant
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="typing-indicator" id="typingIndicator" style="display: none;">
+                        <div class="typing-avatar">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div class="typing-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+
+                    <div class="chat-input-area">
+                        <form class="chat-input-form" id="chatForm">
+                            <button type="button" class="input-icon-btn" title="Attach">
+                                <i class="fas fa-paperclip"></i>
+                            </button>
+                            <input 
+                                type="text" 
+                                id="messageInput" 
+                                placeholder="Ask me anything about food, restaurants, or ordering..."
+                                autocomplete="off"
+                            >
+                            <button type="button" class="input-icon-btn" title="Voice">
+                                <i class="fas fa-microphone"></i>
+                            </button>
+                            <button type="submit" class="send-btn" id="sendBtn">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other Views (Placeholders) -->
+            <div class="view-container" id="restaurantsView">
+                <div class="content-placeholder">
+                    <i class="fas fa-store"></i>
+                    <h2>Restaurants</h2>
+                    <p>Browse all available restaurants</p>
+                </div>
+            </div>
+
+            <div class="view-container" id="ordersView">
+                <div class="content-placeholder">
+                    <i class="fas fa-shopping-bag"></i>
+                    <h2>My Orders</h2>
+                    <p>View your order history</p>
+                </div>
+            </div>
+
+            <div class="view-container" id="profileView">
+                <div class="content-placeholder">
+                    <i class="fas fa-user"></i>
+                    <h2>Profile</h2>
+                    <p>Manage your account settings</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Login Modal -->
+    <div class="modal-overlay" id="loginModal">
+        <div class="modal-card">
+            <button class="modal-close" id="closeLoginModal">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="modal-header">
+                <i class="fas fa-pizza-slice modal-icon"></i>
+                <h2>Welcome Back!</h2>
+                <p>Login to access all features</p>
+            </div>
+            <form id="loginForm" class="modal-form">
+                <div class="input-group">
+                    <i class="fas fa-user input-icon"></i>
+                    <input type="text" id="loginUsername" placeholder="Username" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock input-icon"></i>
+                    <input type="password" id="loginPassword" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-sign-in-alt"></i>
+                    Login
+                </button>
+                <div class="modal-footer">
+                    <span>Don't have an account?</span>
+                    <a href="#" id="showRegister">Register now</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div class="modal-overlay" id="registerModal">
+        <div class="modal-card">
+            <button class="modal-close" id="closeRegisterModal">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="modal-header">
+                <i class="fas fa-user-plus modal-icon"></i>
+                <h2>Join FoodieBot!</h2>
+                <p>Create your account to get started</p>
+            </div>
+            <form id="registerForm" class="modal-form">
+                <div class="input-group">
+                    <i class="fas fa-user input-icon"></i>
+                    <input type="text" id="registerUsername" placeholder="Username" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-envelope input-icon"></i>
+                    <input type="email" id="registerEmail" placeholder="Email" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock input-icon"></i>
+                    <input type="password" id="registerPassword" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-user-plus"></i>
+                    Create Account
+                </button>
+                <div class="modal-footer">
+                    <span>Already have an account?</span>
+                    <a href="#" id="showLogin">Login here</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
