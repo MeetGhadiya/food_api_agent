@@ -1,6 +1,6 @@
 """
 AI Food Delivery Chatbot Agent - V4.0
-Built with Google Gemini AI and Flask
+Built with Ollama (Local AI) and Flask
 Enhanced with Personalized Recommendations & Business Intelligence
 
 V4.0 FEATURES:
@@ -8,6 +8,7 @@ V4.0 FEATURES:
 - Proactive review requests after orders
 - Admin dashboard integration
 - Enhanced user engagement
+- LOCAL AI with Ollama (no API keys needed!)
 
 PREVIOUS ENHANCEMENTS:
 - Reviews, Multi-Item Orders, and Cuisine Search
@@ -22,24 +23,36 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import requests
-import google.generativeai as genai
 from dotenv import load_dotenv
 import json
 from typing import Dict, Any, Optional, List
+import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
+
+# Configure Google Gemini AI
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    print("⚠️  WARNING: GOOGLE_API_KEY not found in environment variables")
+    print("   AI functionality will be limited")
+else:
+    genai.configure(api_key=GOOGLE_API_KEY)
+    print("✅ Google Gemini AI configured")
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"])
 
-# Configure Gemini AI
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    raise ValueError("❌ CRITICAL: GOOGLE_API_KEY not found in .env file")
+# ==================== OLLAMA CONFIGURATION ====================
+# Local AI model - runs entirely on your machine!
+# No API keys, no billing, completely free!
 
-genai.configure(api_key=GOOGLE_API_KEY)
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")  # Default model
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
+
+print(f"🤖 Using Ollama Model: {OLLAMA_MODEL}")
+print(f"🔗 Ollama Server: {OLLAMA_URL}")
 
 # API Configuration
 FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://localhost:8000")
@@ -58,76 +71,134 @@ pending_orders: Dict[str, Dict[str, Any]] = {}
 # V4.0: Track recent orders for proactive review prompts
 recent_orders: Dict[str, Dict[str, Any]] = {}  # {user_id: {restaurant_name, order_id, turns_since_order}}
 
-# ==================== REDIS SESSION STORE (RECOMMENDED) ====================
-# TODO: Implement Redis-based session storage for production
-# Benefits:
-# - Persistent storage across restarts
-# - Scales horizontally across multiple instances
-# - Automatic session expiry (TTL)
-# - High performance and reliability
-#
-# Implementation Blueprint:
-"""
-import redis
-import json
-from datetime import timedelta
+# ==================== REDIS SESSION STORE (V4.0 PRODUCTION-READY) ====================
+# V4.0: Redis integration for stateful, persistent sessions
 
-# Initialize Redis client
-redis_client = redis.Redis(
-    host=os.getenv('REDIS_HOST', 'localhost'),
-    port=int(os.getenv('REDIS_PORT', 6379)),
-    password=os.getenv('REDIS_PASSWORD', None),
-    db=int(os.getenv('REDIS_DB', 0)),
-    decode_responses=True
-)
+try:
+    import redis
+    redis_available = True
+    print("✅ Redis module imported successfully")
+except ImportError:
+    redis_available = False
+    print("⚠️  Redis module not available - using fallback in-memory storage")
+    print("   Install with: pip install redis")
 
-# Session Management Functions
-def get_session_from_redis(user_id: str) -> list:
-    '''Retrieve chat history from Redis'''
-    session_key = f"chat_session:{user_id}"
-    session_data = redis_client.get(session_key)
+# Initialize Redis client (if available)
+redis_client = None
+if redis_available:
+    try:
+        redis_client = redis.Redis(
+            host=os.getenv('REDIS_HOST', 'localhost'),
+            port=int(os.getenv('REDIS_PORT', 6379)),
+            password=os.getenv('REDIS_PASSWORD', None),
+            db=int(os.getenv('REDIS_DB', 0)),
+            decode_responses=True,
+            socket_connect_timeout=5
+        )
+        # Test connection
+        redis_client.ping()
+        print(f"✅ Redis connected: {os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', 6379)}")
+    except Exception as e:
+        print(f"⚠️  Redis connection failed: {e}")
+        print("   Falling back to in-memory storage")
+        redis_client = None
+
+# Redis Helper Functions
+def save_to_redis(user_id: str, key: str, value: Any, ttl: int = 600):
+    """
+    Save data to Redis with TTL (Time To Live).
     
-    if session_data:
-        return json.loads(session_data)
-    return []
+    Args:
+        user_id: User identifier
+        key: Data key (e.g., 'last_entity', 'pending_order')
+        value: Data to store (will be JSON serialized)
+        ttl: Time to live in seconds (default 600 = 10 minutes)
+    """
+    if redis_client:
+        try:
+            redis_key = f"session:{user_id}:{key}"
+            redis_client.setex(
+                redis_key,
+                ttl,
+                json.dumps(value)
+            )
+            return True
+        except Exception as e:
+            print(f"⚠️  Redis save failed: {e}")
+            return False
+    else:
+        # Fallback to in-memory storage
+        if user_id not in chat_sessions:
+            chat_sessions[user_id] = []
+        # Store in a metadata dict
+        if not hasattr(chat_sessions[user_id], '__dict__'):
+            chat_sessions[user_id] = []
+        # Use pending_orders dict as fallback
+        fallback_key = f"{user_id}:{key}"
+        pending_orders[fallback_key] = value
+        return True
 
-def save_session_to_redis(user_id: str, history: list, ttl: int = 3600):
-    '''Save chat history to Redis with TTL (default 1 hour)'''
-    session_key = f"chat_session:{user_id}"
-    redis_client.setex(
-        session_key,
-        timedelta(seconds=ttl),
-        json.dumps(history)
-    )
-
-def get_pending_order_from_redis(user_id: str) -> Optional[Dict]:
-    '''Retrieve pending order from Redis'''
-    order_key = f"pending_order:{user_id}"
-    order_data = redis_client.get(order_key)
+def get_from_redis(user_id: str, key: str, default: Any = None) -> Any:
+    """
+    Retrieve data from Redis.
     
-    if order_data:
-        return json.loads(order_data)
-    return None
+    Args:
+        user_id: User identifier
+        key: Data key (e.g., 'last_entity', 'pending_order')
+        default: Default value if key not found
+    
+    Returns:
+        Stored value or default
+    """
+    if redis_client:
+        try:
+            redis_key = f"session:{user_id}:{key}"
+            data = redis_client.get(redis_key)
+            if data and isinstance(data, str):
+                return json.loads(data)
+            return default
+        except Exception as e:
+            print(f"⚠️  Redis get failed: {e}")
+            return default
+    else:
+        # Fallback to in-memory storage
+        fallback_key = f"{user_id}:{key}"
+        return pending_orders.get(fallback_key, default)
 
-def save_pending_order_to_redis(user_id: str, order: Dict, ttl: int = 600):
-    '''Save pending order to Redis with TTL (default 10 minutes)'''
-    order_key = f"pending_order:{user_id}"
-    redis_client.setex(
-        order_key,
-        timedelta(seconds=ttl),
-        json.dumps(order)
-    )
-
-def delete_pending_order_from_redis(user_id: str):
-    '''Delete pending order after completion/cancellation'''
-    order_key = f"pending_order:{user_id}"
-    redis_client.delete(order_key)
-
-# Usage in production:
-# Replace chat_sessions[user_id] with get_session_from_redis(user_id)
-# Replace chat_sessions[user_id] = [...] with save_session_to_redis(user_id, [...])
-# Similar replacements for pending_orders
-"""
+def delete_from_redis(user_id: str, key: Optional[str] = None):
+    """
+    Delete data from Redis.
+    
+    Args:
+        user_id: User identifier
+        key: Specific key to delete, or None to delete all user data
+    """
+    if redis_client:
+        try:
+            if key:
+                redis_key = f"session:{user_id}:{key}"
+                redis_client.delete(redis_key)
+            else:
+                # Delete all keys for this user
+                pattern = f"session:{user_id}:*"
+                keys_list = redis_client.keys(pattern)
+                if keys_list and isinstance(keys_list, list):
+                    redis_client.delete(*keys_list)
+            return True
+        except Exception as e:
+            print(f"⚠️  Redis delete failed: {e}")
+            return False
+    else:
+        # Fallback to in-memory storage
+        if key:
+            fallback_key = f"{user_id}:{key}"
+            pending_orders.pop(fallback_key, None)
+        else:
+            # Delete all keys for this user
+            keys_to_delete = [k for k in pending_orders.keys() if k.startswith(f"{user_id}:")]
+            for k in keys_to_delete:
+                del pending_orders[k]
+        return True
 
 # ==================== FUNCTION DECLARATIONS ====================
 
@@ -184,8 +255,47 @@ function_declarations = [
         )
     ),
     genai.protos.FunctionDeclaration(
+        name="prepare_order_for_confirmation",
+        description="V4.0: Prepare an order for user confirmation. ALWAYS call this FIRST before place_order. Calculates total price and saves order to Redis. Returns confirmation question with total. Use when user wants to order food.",
+        parameters=genai.protos.Schema(
+            type=genai.protos.Type.OBJECT,
+            properties={
+                "user_id": genai.protos.Schema(
+                    type=genai.protos.Type.STRING,
+                    description="User identifier"
+                ),
+                "restaurant_name": genai.protos.Schema(
+                    type=genai.protos.Type.STRING,
+                    description="Name of the restaurant to order from"
+                ),
+                "items": genai.protos.Schema(
+                    type=genai.protos.Type.ARRAY,
+                    description="List of items to order with quantities and prices",
+                    items=genai.protos.Schema(
+                        type=genai.protos.Type.OBJECT,
+                        properties={
+                            "item_name": genai.protos.Schema(
+                                type=genai.protos.Type.STRING,
+                                description="Name of the food item"
+                            ),
+                            "quantity": genai.protos.Schema(
+                                type=genai.protos.Type.INTEGER,
+                                description="Quantity of this item"
+                            ),
+                            "price": genai.protos.Schema(
+                                type=genai.protos.Type.NUMBER,
+                                description="Price per unit of this item"
+                            )
+                        }
+                    )
+                )
+            },
+            required=["user_id", "restaurant_name", "items"]
+        )
+    ),
+    genai.protos.FunctionDeclaration(
         name="place_order",
-        description="Place a food order with multiple items from a restaurant. Use when user wants to order, buy, or get food. Supports ordering multiple items in one order.",
+        description="V4.0: Execute a CONFIRMED order. DO NOT call this directly - user must confirm first via prepare_order_for_confirmation. Only called after user explicitly confirms (says 'yes', 'confirm', 'ok', 'yep').",
         parameters=genai.protos.Schema(
             type=genai.protos.Type.OBJECT,
             properties={
@@ -388,12 +498,27 @@ def get_all_restaurants() -> str:
         return f"❌ Error connecting to restaurant service: {str(e)}"
 
 
-def get_restaurant_by_name(name: str) -> str:
-    """Get specific restaurant by name"""
+def get_restaurant_by_name(name: str, user_id: str = "guest") -> str:
+    """
+    Get specific restaurant by name.
+    
+    V4.0: Saves context to Redis for vague follow-up queries.
+    """
     try:
         response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/{name}")
         if response.status_code == 200:
             restaurant = response.json()
+            
+            # V4.0: Save context to Redis (TTL = 600 seconds = 10 minutes)
+            save_to_redis(user_id, 'last_entity', {
+                'type': 'restaurant',
+                'name': restaurant['name'],
+                'area': restaurant.get('area'),
+                'cuisine': restaurant.get('cuisine')
+            }, ttl=600)
+            
+            print(f"🔥 CONTEXT SAVED: {restaurant['name']} → session:{user_id}:last_entity")
+            
             result = f"🏪 **{restaurant['name']}**\n\n"
             result += f"📍 Location: {restaurant['area']}\n"
             result += f"🍴 Cuisine: {restaurant.get('cuisine', 'Not specified')}\n\n"
@@ -507,6 +632,61 @@ def search_restaurants_by_item(item_name: str) -> str:
         return f"🔌 Cannot connect to the restaurant database. Please check if the backend service is running."
     except Exception as e:
         return f"❌ An unexpected error occurred while searching for {item_name}: {str(e)}"
+
+
+def prepare_order_for_confirmation(user_id: str, restaurant_name: str, items: List[Dict[str, Any]]) -> str:
+    """
+    V4.0: Prepare order for user confirmation.
+    
+    This function calculates the total price and saves the order to Redis
+    with a TTL of 600 seconds (10 minutes). It returns a confirmation question
+    that the AI will ask the user.
+    
+    Args:
+        user_id: User identifier
+        restaurant_name: Name of the restaurant
+        items: List of items with item_name, quantity, and price
+    
+    Returns:
+        Formatted confirmation message with total price
+    """
+    try:
+        # Calculate total price
+        total_price = sum(item['price'] * item['quantity'] for item in items)
+        
+        # Save to Redis with TTL=600 (10 minutes)
+        order_data = {
+            'restaurant_name': restaurant_name,
+            'items': items,
+            'total_price': total_price
+        }
+        
+        save_to_redis(user_id, 'pending_order', order_data, ttl=600)
+        
+        print(f"🔥 PENDING ORDER SAVED: {restaurant_name} (₹{total_price}) → session:{user_id}:pending_order")
+        
+        # Build confirmation message
+        result = "🛒 **Order Summary - Please Confirm** 🛒\n\n"
+        result += f"🏪 Restaurant: **{restaurant_name}**\n\n"
+        result += "📦 **Your Items:**\n"
+        
+        for item in items:
+            item_total = item['price'] * item['quantity']
+            result += f"  • {item['item_name']} × {item['quantity']} = ₹{item_total}\n"
+        
+        result += f"\n💰 **Total: ₹{total_price:.2f}**\n\n"
+        result += "✅ **Would you like to confirm this order?**\n"
+        result += "   Say 'yes', 'confirm', 'ok', or 'yep' to proceed!\n"
+        result += "   Say 'no' or 'cancel' to cancel this order."
+        
+        return result
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"\n❌ PREPARE ORDER EXCEPTION:")
+        print(error_trace)
+        return f"❌ Error preparing order: {str(e)}\n\nPlease try again or contact support."
 
 
 def place_order(restaurant_name: str, items: List[Dict[str, Any]], token: str) -> str:
@@ -870,6 +1050,7 @@ available_functions = {
     "get_restaurant_by_name": get_restaurant_by_name,
     "search_restaurants_by_cuisine": search_restaurants_by_cuisine,
     "search_restaurants_by_item": search_restaurants_by_item,
+    "prepare_order_for_confirmation": prepare_order_for_confirmation,  # V4.0: New function
     "place_order": place_order,
     "get_user_orders": get_user_orders,
     "add_review": add_review,
@@ -1005,6 +1186,134 @@ Ready to order some delicious food? Let me know what you're craving! 🍽️"""
                 "personalized": True
             })
         
+        # ==================== V4.0: ORDER CONFIRMATION CHECK ====================
+        # Check if user has a pending order and is confirming
+        pending_order = get_from_redis(user_id, 'pending_order')
+        
+        if pending_order:
+            app.logger.info(f"🔥 V4.0: Pending order found for user {user_id}")
+            
+            # Check if user is confirming (yes, ok, confirm, yep, etc.)
+            confirmation_keywords = ['yes', 'ok', 'confirm', 'yep', 'sure', 'proceed', 'go ahead', 'yeah']
+            cancellation_keywords = ['no', 'cancel', 'nope', 'nevermind', 'stop']
+            
+            user_message_lower = user_message.lower().strip()
+            
+            # User confirms the order
+            if any(keyword in user_message_lower for keyword in confirmation_keywords):
+                app.logger.info(f"✅ V4.0: User confirmed order - executing place_order")
+                
+                # Check if user is authenticated
+                if not token:
+                    delete_from_redis(user_id, 'pending_order')
+                    confirmation_response = "🔒 **Authentication Required!**\n\nTo place this order, please log in using the button in the top right corner. 🙂"
+                    
+                    chat_sessions[user_id].append({"role": "user", "parts": [user_message]})
+                    chat_sessions[user_id].append({"role": "model", "parts": [confirmation_response]})
+                    
+                    return jsonify({
+                        "response": confirmation_response,
+                        "requires_auth": True
+                    })
+                
+                # Execute the order
+                try:
+                    order_response = place_order(
+                        restaurant_name=pending_order['restaurant_name'],
+                        items=pending_order['items'],
+                        token=token
+                    )
+                    
+                    # Clear pending order
+                    delete_from_redis(user_id, 'pending_order')
+                    app.logger.info(f"✅ V4.0: Order executed and pending order cleared")
+                    
+                    # Add to chat history
+                    chat_sessions[user_id].append({"role": "user", "parts": [user_message]})
+                    chat_sessions[user_id].append({"role": "model", "parts": [order_response]})
+                    
+                    return jsonify({
+                        "response": order_response,
+                        "order_confirmed": True
+                    })
+                    
+                except Exception as e:
+                    error_msg = f"❌ Error executing order: {str(e)}\n\nPlease try again or contact support."
+                    app.logger.error(f"❌ V4.0: Order execution failed: {e}")
+                    
+                    # Clear pending order on error
+                    delete_from_redis(user_id, 'pending_order')
+                    
+                    chat_sessions[user_id].append({"role": "user", "parts": [user_message]})
+                    chat_sessions[user_id].append({"role": "model", "parts": [error_msg]})
+                    
+                    return jsonify({"response": error_msg})
+            
+            # User cancels the order
+            elif any(keyword in user_message_lower for keyword in cancellation_keywords):
+                app.logger.info(f"❌ V4.0: User cancelled order")
+                
+                # Clear pending order
+                delete_from_redis(user_id, 'pending_order')
+                
+                cancellation_response = "✅ **Order Cancelled**\n\nNo problem! Your order has been cancelled. 😊\n\n💡 Let me know if you'd like to order something else!"
+                
+                chat_sessions[user_id].append({"role": "user", "parts": [user_message]})
+                chat_sessions[user_id].append({"role": "model", "parts": [cancellation_response]})
+                
+                return jsonify({
+                    "response": cancellation_response,
+                    "order_cancelled": True
+                })
+            
+            # User said something else - remind them about pending order
+            else:
+                app.logger.info(f"ℹ️  V4.0: User has pending order but didn't confirm/cancel - reminding them")
+                
+                reminder = f"⏰ **You have a pending order!**\n\n"
+                reminder += f"🏪 Restaurant: **{pending_order['restaurant_name']}**\n"
+                reminder += f"💰 Total: ₹{pending_order['total_price']:.2f}\n\n"
+                reminder += "Please confirm your order by saying **'yes'** or **'confirm'**, or cancel it by saying **'no'** or **'cancel'**."
+                
+                chat_sessions[user_id].append({"role": "user", "parts": [user_message]})
+                chat_sessions[user_id].append({"role": "model", "parts": [reminder]})
+                
+                return jsonify({
+                    "response": reminder,
+                    "pending_order": True
+                })
+        
+        # ==================== V4.0: CONTEXT-AWARE ROUTING ====================
+        # Check if user is asking a vague question that needs context
+        user_message_lower = user_message.lower()
+        vague_menu_queries = [
+            "show me the menu", "the menu", "what's on the menu", "menu please",
+            "what do they have", "what do they serve", "what items", "show items",
+            "what can i order", "what's available", "tell me more", "more info"
+        ]
+        
+        is_vague_query = any(vague in user_message_lower for vague in vague_menu_queries)
+        
+        # If user asks vague "menu" question, check if we have context
+        if "menu" in user_message_lower or is_vague_query:
+            last_entity = get_from_redis(user_id, 'last_entity')
+            
+            if last_entity and last_entity.get('type') == 'restaurant':
+                restaurant_name = last_entity['name']
+                app.logger.info(f"🔥 V4.0: CONTEXT HIT - User asked vague question, using last_entity: {restaurant_name}")
+                
+                # Call get_restaurant_by_name with context
+                restaurant_details = get_restaurant_by_name(restaurant_name, user_id)
+                
+                # Add to chat history
+                chat_sessions[user_id].append({"role": "user", "parts": [user_message]})
+                chat_sessions[user_id].append({"role": "model", "parts": [restaurant_details]})
+                
+                return jsonify({
+                    "response": restaurant_details,
+                    "context_used": True
+                })
+        
         # ==================== CONTINUE WITH NORMAL CHAT FLOW ====================
         
         # PHASE 1.3 & 3: Enhanced system instruction with seamless auth + improved UX
@@ -1036,6 +1345,46 @@ Key capabilities (ALWAYS use functions to get real data):
 Example:
 ❌ WRONG: "Please log in first to place an order"
 ✅ CORRECT: "Great! Let me place that order for you..." [proceeds to place order]
+
+⚠️ CRITICAL: V4.0 ORDER CONFIRMATION WORKFLOW
+**TWO-STEP ORDER PROCESS - ALWAYS CONFIRM BEFORE PLACING!**
+
+When user wants to order food:
+1. **STEP 1**: Call prepare_order_for_confirmation(user_id, restaurant_name, items)
+   - This calculates total and asks for confirmation
+   - DO NOT call place_order directly
+   - The system will save the pending order and ask user to confirm
+
+2. **STEP 2**: User confirms (handled automatically by system)
+   - User says "yes", "ok", "confirm", "yep" → Order is placed automatically
+   - User says "no", "cancel" → Order is cancelled
+   - You don't need to handle confirmation - the system does it
+
+Example Flow:
+User: "order 2 Masala Thepla from Thepla House"
+You: [Call prepare_order_for_confirmation with user_id, restaurant_name, items]
+System: Shows confirmation message with total price
+User: "yes"
+System: Automatically executes place_order and shows success message
+
+IMPORTANT:
+- NEVER call place_order directly when user first requests an order
+- ALWAYS use prepare_order_for_confirmation first
+- The confirmation step is automatic - you just prepare the order
+- This prevents accidental orders and builds user trust
+
+⚠️ CRITICAL: V4.0 CONTEXT AWARENESS
+**REMEMBER WHAT USER JUST VIEWED!**
+
+When user views a restaurant details (e.g., "tell me about Thepla House"), the system
+automatically saves this as context. If user then asks vague follow-up questions like:
+- "show me the menu"
+- "what do they have"
+- "tell me more"
+- "what's available"
+
+The system will automatically use the last viewed restaurant from context.
+You don't need to ask "Which restaurant?" - the context is automatically applied!
 
 ⚠️ CRITICAL: PRIORITIZE USER INTENT (Phase 3.2 Enhancement)
 Your PRIMARY goal is to solve the user's immediate request intelligently:
@@ -1434,15 +1783,26 @@ def health():
 
 @app.route('/clear-session', methods=['POST'])
 def clear_session():
-    """Clear chat session for a user"""
-    data = request.json
-    user_id = data.get('user_id', 'guest')
+    """
+    Clear chat session for a user.
     
+    V4.0: Also clears Redis context data (last_entity, pending_order).
+    """
+    data = request.json
+    user_id = data.get('user_id', 'guest') if data else 'guest'
+    
+    # Clear chat history
     if user_id in chat_sessions:
         del chat_sessions[user_id]
     
+    # Clear in-memory pending orders (fallback)
     if user_id in pending_orders:
         del pending_orders[user_id]
+    
+    # V4.0: Clear Redis context data
+    delete_from_redis(user_id)  # Clears all session:{user_id}:* keys
+    
+    print(f"🧹 Session cleared for user: {user_id}")
     
     return jsonify({"message": "Session cleared successfully! 🧹"})
 

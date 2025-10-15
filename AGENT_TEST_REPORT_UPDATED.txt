@@ -1,0 +1,673 @@
+===============================================================================
+FOOD CHATBOT AGENT - COMPREHENSIVE TEST EXECUTION GUIDE
+===============================================================================
+Test Date: October 15, 2025
+Agent Version: V4.0 - OLLAMA EDITION
+Status: ✅ READY FOR TESTING
+
+PURPOSE:
+Validate that the Ollama-powered chatbot agent properly handles all user
+questions according to guiding principles: clarity, context awareness,
+proactivity, formatting, error handling, and persona.
+
+GUIDING PRINCIPLES CHECKLIST:
+✓ Clear & Concise - Use bullet points, get to the point
+✓ Proactive & Helpful - Guide users to next steps
+✓ Maintain Context - Remember previous messages
+✓ Personable & Engaging - Use emojis, enthusiastic tone
+✓ Confirm Before Acting - Never auto-submit orders/reviews
+✓ Handle Failure Gracefully - User-friendly error messages
+
+===============================================================================
+🚀 QUICK START - AUTOMATED TESTING
+===============================================================================
+
+OPTION 1: Automated Test Suite (Recommended)
+─────────────────────────────────────────────
+```powershell
+cd "c:\Users\Skill\Desktop\m\API\agent workspace\food_api_agent-1"
+.\.venv\Scripts\python.exe run_comprehensive_tests.py
+```
+
+This will:
+- Test all categories automatically
+- Generate detailed JSON report
+- Show pass/fail for each test
+- Highlight issues found
+- Calculate success rate
+
+OPTION 2: Manual Testing (Detailed Analysis)
+──────────────────────────────────────────────
+Follow the test matrix below, testing each scenario manually via:
+- Frontend: http://localhost:5173 (user-facing)
+- Watch Flask terminal for tool calls (developer view)
+
+===============================================================================
+TEST MATRIX - COMPREHENSIVE COVERAGE
+===============================================================================
+
+CATEGORY 1: Basic Greetings & Help 👋
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST 1.1: Simple Greeting
+─────────────────────────
+User Input: "hello"
+
+Expected Agent Behavior (Terminal):
+  - No tool call (direct LLM response)
+  - Should return immediately
+
+Expected Agent Response (Chat):
+  - Friendly greeting with emojis (👋, 🍕, etc.)
+  - Brief introduction to capabilities
+  - Proactive suggestion: "What can I help you with?"
+  - Example: "👋 Hello! Welcome to FoodieExpress! 🍕 I can help you browse
+    restaurants, search for your favorite dishes, place orders, and more!
+    What would you like to do today?"
+
+Success Criteria:
+  ✓ Contains emoji
+  ✓ Warm and welcoming tone
+  ✓ Mentions at least 2 capabilities
+  ✓ Ends with question or call-to-action
+  ✗ Should NOT be formal or robotic
+  ✗ Should NOT call any tools
+
+Status: [ ]
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 1.2: Capabilities Inquiry
+───────────────────────────────
+User Input: "what can you do?"
+
+Expected Agent Behavior (Terminal):
+  - No tool call (direct LLM response)
+
+Expected Agent Response (Chat):
+  - Bulleted or numbered list of capabilities
+  - Include emojis for each category
+  - Examples:
+    🏪 Browse all restaurants
+    🔍 Search by cuisine or food item
+    🍕 Place orders (with login)
+    ⭐ Read and write reviews
+    📋 View your order history
+
+Success Criteria:
+  ✓ Uses bullet points or numbers
+  ✓ 5+ capabilities listed
+  ✓ Emojis for visual appeal
+  ✓ Ends with "What would you like to try?"
+  ✗ Should NOT be a paragraph
+
+Status: [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+CATEGORY 2: Restaurant Discovery 🏪
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST 2.1: List All Restaurants ⚠️ CRITICAL
+───────────────────────────────────────────
+User Input: "list all restaurants"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST call: get_all_restaurants()
+  ✓ Should show complete function output
+  ✗ Should NOT send "Let me fetch that..." before calling
+  ✗ Should NOT paraphrase/summarize results
+
+Expected Agent Response (Chat):
+  - Complete, numbered list of ALL restaurants
+  - Format per restaurant:
+    1. **Restaurant Name** 🏪
+       📍 Location: [Area]
+       🍴 Cuisine: [Type]
+  - Should include emojis: 🏪, 📍, 🍴
+  - End with: "Which one interests you? Or would you like to search by cuisine?"
+
+Critical Bug Check:
+  ❌ BUG: Shows "Here are the restaurants!" but list is empty
+  ❌ BUG: Shows only 3-5 of 7 restaurants (truncation)
+  ❌ BUG: Sends message before calling function
+  ❌ BUG: AI paraphrases instead of showing raw list
+
+Success Criteria:
+  ✓ ALL restaurants displayed (count matches backend data)
+  ✓ Consistent formatting with emojis
+  ✓ Numbered list
+  ✓ Helpful next step suggestion
+
+Status: [ ]
+Actual Count: _____ restaurants shown
+Backend Count: _____ (from /restaurants API)
+Match: [ ] Yes  [ ] No
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 2.2: Cuisine Filter
+────────────────────────
+User Input: "show me gujarati restaurants"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST call: search_restaurants_by_cuisine(cuisine="Gujarati")
+  ✗ Should NOT call: get_all_restaurants()
+
+Expected Agent Response (Chat):
+  - Filtered list of ONLY Gujarati restaurants
+  - Same format as TEST 2.1
+  - If none found: "I couldn't find Gujarati restaurants. Here are all
+    available cuisines: [list]"
+
+Critical Bug Check:
+  ❌ BUG (OLD): Returns ALL restaurants with message "filtering not available"
+  ❌ BUG: Calls wrong tool
+  ❌ BUG: Case sensitivity issues (gujarati vs Gujarati)
+
+Success Criteria:
+  ✓ Only Gujarati restaurants shown
+  ✓ Count matches expected (verify with backend)
+  ✓ Good formatting
+
+Status: [ ]
+Gujarati Count: _____ shown
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 2.3: Specific Restaurant Info
+───────────────────────────────────
+User Input: "tell me about Swati Snacks"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST call: get_restaurant_by_name(name="Swati Snacks")
+  ✓ Function should return restaurant info + FULL MENU
+
+Expected Agent Response (Chat):
+  - Restaurant details:
+    **Swati Snacks** 🏪
+    📍 Location: [Area]
+    🍴 Cuisine: [Gujarati]
+    ⭐ Rating: [X.X stars]
+
+  - Full Menu with prices:
+    📋 **Menu:**
+    • Bhel - ₹50
+    • Dhokla - ₹60
+    (all items with prices)
+
+  - Proactive suggestion: "Would you like to place an order?"
+
+Critical Bug Check:
+  ❌ BUG: Shows restaurant info but menu is empty/missing
+  ❌ BUG: Only shows first 3 menu items when there are more
+  ❌ BUG: Prices missing
+
+Success Criteria:
+  ✓ Restaurant name, location, cuisine shown
+  ✓ COMPLETE menu with ALL items
+  ✓ Prices shown (₹XX format)
+  ✓ Suggests next action
+
+Status: [ ]
+Menu Items Shown: _____
+Expected (from backend): _____
+
+═══════════════════════════════════════════════════════════════════════════════
+CATEGORY 3: Menu & Item Inquiry 📋
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST 3.1: Item Search ⚠️⚠️ CRITICAL PRIORITY TEST
+──────────────────────────────────────────────────
+User Input: "which restaurant has bhel?"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST call: search_restaurants_by_item(item_name="bhel")
+  ✗ MUST NOT call: search_restaurants_by_cuisine()
+  ✗ MUST NOT ask: "What cuisine?"
+
+Expected Agent Response (Chat):
+  - List of restaurants serving bhel:
+    🔍 Restaurants serving **bhel**:
+    1. **Swati Snacks** - Bhel (₹50)
+    2. **Honest Restaurant** - Bhel (₹45)
+  - Suggestion: "Would you like to order from one of these?"
+
+Critical Bug Check (HIGHEST PRIORITY):
+  ❌ BUG: Calls search_by_cuisine instead of search_by_item
+  ❌ BUG: Asks "What cuisine do you prefer?" (wrong path)
+  ❌ BUG: Gets stuck in loop
+  ❌ BUG: Says "I can't find that" without trying search_by_item
+
+Why This Test Is Critical:
+  - Tests AI's understanding of user intent
+  - Common failure pattern in conversational AI
+  - Core search functionality for users
+  - System instruction says this is "PRIORITY TOOL"
+
+Success Criteria:
+  ✓ Correct tool called (search_by_item)
+  ✓ Shows restaurants serving bhel
+  ✓ Does NOT ask for cuisine
+  ✓ Helpful suggestion
+
+Status: [ ]
+Tool Called: _____________________
+Correct: [ ] Yes  [ ] No
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 3.2: Context Retention ⚠️ CRITICAL
+────────────────────────────────────────
+Setup: First send TEST 2.3 message: "tell me about Swati Snacks"
+Then immediately send:
+
+User Input: "show me the menu"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST call: get_restaurant_by_name(name="Swati Snacks")
+  ✓ Should extract "Swati Snacks" from conversation history
+  ✗ Should NOT ask: "Which restaurant?"
+
+Expected Agent Response (Chat):
+  - Display menu for Swati Snacks (same as TEST 2.3)
+  - Should NOT say: "Which restaurant would you like?"
+  - Should acknowledge context: "Here's the menu for Swati Snacks..."
+
+Critical Bug Check:
+  ❌ BUG: Loses context, asks "Which restaurant?"
+  ❌ BUG: Shows menu for wrong restaurant
+  ❌ BUG: Says "I need more information"
+
+Success Criteria:
+  ✓ Remembers "Swati Snacks" from previous message
+  ✓ Shows correct menu
+  ✓ No clarifying questions
+
+Status: [ ]
+Context Retained: [ ] Yes  [ ] No
+
+═══════════════════════════════════════════════════════════════════════════════
+CATEGORY 4: Ordering Flow 🍕
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST 4.1: Ambiguous Order Intent
+─────────────────────────────────
+User Input: "I want to order"
+
+Expected Agent Behavior (Terminal):
+  - No tool call initially
+  - Should ask clarifying question
+
+Expected Agent Response (Chat):
+  - Friendly clarification request
+  - Example: "Great! What would you like to order, and from which restaurant?"
+  - OR: "Sure! Tell me what you're craving and I'll help you order!"
+
+Success Criteria:
+  ✓ Asks what and where
+  ✓ Friendly tone
+  ✓ Doesn't fail or give up
+
+Status: [ ]
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 4.2: Order with Confirmation ⚠️⚠️ CRITICAL
+────────────────────────────────────────────────
+User Input: "order 2 Masala Thepla from Thepla House"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST first call: get_restaurant_by_name("Thepla House") to get prices
+  ✓ Should calculate: 2 × price = total
+  ✓ Should store pending order (NOT place yet)
+  ✗ MUST NOT call: place_order() without confirmation
+
+Expected Agent Response (Chat):
+  - Order summary with confirmation request:
+    "🛒 Your Order Summary:
+     📦 2x Masala Thepla from Thepla House
+     💰 Total: ₹70.0
+
+     Should I place this order? (Please say 'yes' to confirm or 'no' to cancel)"
+
+  - MUST wait for user to say "yes"
+  - Should NOT show "✅ Order placed successfully"
+
+Critical Bug Check:
+  ❌ BUG: Places order immediately without asking
+  ❌ BUG: Shows "Order placed" in first response
+  ❌ BUG: Doesn't calculate total price
+  ❌ BUG: Can't find item price
+
+Success Criteria:
+  ✓ Shows order summary
+  ✓ Displays total price correctly
+  ✓ Asks for confirmation ("yes" or "no")
+  ✗ Does NOT place order yet
+
+Status: [ ]
+Confirmation Asked: [ ] Yes  [ ] No
+Order Placed Immediately: [ ] Yes (BUG)  [ ] No (CORRECT)
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 4.3: Order Confirmation
+─────────────────────────────
+Setup: First send TEST 4.2 message, then:
+
+User Input: "yes"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST call: place_order() with:
+    - restaurant_name="Thepla House"
+    - items=[{"item_name": "Masala Thepla", "quantity": 2}]
+    - token (if authenticated)
+
+Expected Agent Response (Chat):
+  - Success message:
+    "✅ Your order has been placed successfully!
+     🆔 Order ID: [order_id]
+     📦 2x Masala Thepla from Thepla House
+     💰 Total: ₹70.0
+
+     Your order will be delivered soon! 🎉
+     Would you like to track your order or browse more restaurants?"
+
+Success Criteria:
+  ✓ Confirms order placement
+  ✓ Shows order ID
+  ✓ Displays summary
+  ✓ Proactive next step
+
+Status: [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+CATEGORY 5: User Accounts & Authentication 👤
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST 5.1: Unauthenticated Order Attempt
+────────────────────────────────────────
+Setup: Log out of frontend (if logged in)
+
+User Input: "I want to order a bhel from Swati Snacks"
+
+Expected Agent Response (Chat):
+  - Polite authentication prompt:
+    "🔒 To place an order, you'll need to be logged in.
+     Would you like to log in or register?
+     
+     (Please use the login button in the top right corner)"
+
+Success Criteria:
+  ✓ Explains need to login
+  ✓ Offers login/register options
+  ✓ Friendly tone
+  ✗ Does NOT show technical error
+
+Status: [ ]
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 5.2: Login Flow (Manual)
+──────────────────────────────
+Note: Typically handled by frontend, but agent may assist
+
+User Input: "login"
+
+Expected Agent Response:
+  - Guide to login process
+  - May ask for username/password OR
+  - May direct to frontend login button
+
+Status: [ ] (Optional - may be frontend-only)
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 5.3: Personalized Greeting (V4.0 Feature)
+───────────────────────────────────────────────
+Setup: Login to frontend, then start new chat
+
+First Message: "hello" (while authenticated)
+
+Expected Agent Behavior (Terminal):
+  ✓ Should call: /users/me to get user info
+  ✓ Should call: /orders to get order history
+  ✓ Should use data for personalized greeting
+
+Expected Agent Response (Chat):
+  - Personalized welcome:
+    "Welcome back, [Your Name]! 👋
+     
+     I see your last order was from [Restaurant]!
+     Would you like to order from them again or try something new?"
+
+Success Criteria:
+  ✓ Uses real username
+  ✓ References past order
+  ✓ Personalized experience
+
+Status: [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+CATEGORY 6: Reviews & History ⭐
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST 6.1: Order History
+───────────────────────
+Setup: Must be logged in
+
+User Input: "show my order history"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST call: get_user_orders(token=user_token)
+  ✓ Requires authentication
+
+Expected Agent Response (Chat):
+  - If authenticated, show orders:
+    "📋 Your Order History:
+     
+     1. Order #123 - [Date]
+        🏪 Thepla House
+        📦 2x Masala Thepla
+        💰 ₹70.0
+     
+     2. Order #124 - [Date]
+        ..."
+
+  - If not authenticated:
+    "🔒 Please log in to view your order history."
+
+Success Criteria:
+  ✓ Shows orders if authenticated
+  ✓ Formatted clearly
+  ✓ Includes key details
+
+Status: [ ]
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 6.2: View Reviews
+──────────────────────
+User Input: "show me reviews for Honest Restaurant"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST call: get_reviews(restaurant_name="Honest Restaurant")
+
+Expected Agent Response (Chat):
+  - List of reviews:
+    "⭐ Reviews for Honest Restaurant:
+     
+     1. ⭐⭐⭐⭐⭐ (5 stars) - User123
+        'Excellent food and service!'
+        Posted: [Date]
+     
+     2. ⭐⭐⭐⭐☆ (4 stars) - User456
+        'Good quality, slightly pricey'
+        ..."
+
+Success Criteria:
+  ✓ Shows multiple reviews
+  ✓ Star ratings visible
+  ✓ Usernames and comments
+  ✓ Good formatting
+
+Status: [ ]
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 6.3: Add Review - Intent
+──────────────────────────────
+Setup: Must be logged in
+
+User Input: "I want to leave a 5 star review for Honest Restaurant"
+
+Expected Agent Behavior (Terminal):
+  - No tool call yet (collecting info)
+
+Expected Agent Response (Chat):
+  - Ask for comment:
+    "That's wonderful! 🌟 What comment would you like to add to your 5-star
+     review for Honest Restaurant?"
+
+Success Criteria:
+  ✓ Acknowledges 5-star rating
+  ✓ Asks for comment
+  ✓ Remembers restaurant name
+
+Status: [ ]
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 6.4: Add Review - Submission
+──────────────────────────────────
+Setup: After TEST 6.3
+
+User Input: "The food was amazing!"
+
+Expected Agent Behavior (Terminal):
+  ✓ MUST call: add_review() with:
+    - restaurant_name="Honest Restaurant"
+    - rating=5
+    - comment="The food was amazing!"
+    - token
+
+Expected Agent Response (Chat):
+  - Confirmation:
+    "✅ Thank you! Your 5-star review for Honest Restaurant has been submitted.
+     
+     Your feedback helps others make great food choices! 🌟"
+
+Success Criteria:
+  ✓ Confirms submission
+  ✓ Mentions restaurant and rating
+  ✓ Appreciative tone
+
+Status: [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+CATEGORY 7: Error Handling 🔥
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST 7.1: Backend Down
+──────────────────────
+Setup: Stop the FastAPI backend service
+
+User Input: "list restaurants"
+
+Expected Agent Behavior (Terminal):
+  ✓ Tool call fails with ConnectionError
+  ✓ Should catch exception
+
+Expected Agent Response (Chat):
+  - User-friendly error:
+    "🔌 I'm having trouble connecting to the restaurant service right now.
+     Please try again in a moment. If the issue persists, contact support."
+
+Success Criteria:
+  ✗ Does NOT show: "500 Internal Server Error"
+  ✗ Does NOT show: Stack trace
+  ✓ Friendly, actionable message
+  ✓ Suggests retry
+
+Status: [ ]
+Error Shown: _____________________
+
+─────────────────────────────────────────────────────────────────────────────
+
+TEST 7.2: Nonexistent Restaurant
+─────────────────────────────────
+Setup: Backend is running
+
+User Input: "show menu for RestaurantThatDoesNotExist"
+
+Expected Agent Behavior (Terminal):
+  ✓ Calls: get_restaurant_by_name("RestaurantThatDoesNotExist")
+  ✓ Backend returns 404
+  ✓ Should handle gracefully
+
+Expected Agent Response (Chat):
+  - Helpful error recovery:
+    "🤔 I'm sorry, I couldn't find a restaurant named 'RestaurantThatDoesNotExist'.
+     
+     Would you like to:
+     • See all available restaurants
+     • Search by cuisine
+     • Try a different name"
+
+Success Criteria:
+  ✗ Does NOT show: "404 Not Found"
+  ✓ Acknowledges the search
+  ✓ Offers alternatives
+  ✓ Proactive recovery
+
+Status: [ ]
+
+═══════════════════════════════════════════════════════════════════════════════
+TEST EXECUTION SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+Total Tests: 18
+Categories: 7
+
+Category 1 - Greetings: _____ / 2 passed
+Category 2 - Discovery: _____ / 3 passed
+Category 3 - Menu & Items: _____ / 2 passed (CRITICAL)
+Category 4 - Ordering: _____ / 3 passed (CRITICAL)
+Category 5 - Authentication: _____ / 3 passed
+Category 6 - Reviews: _____ / 4 passed
+Category 7 - Error Handling: _____ / 2 passed
+
+OVERALL SUCCESS RATE: _____% 
+
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL ISSUES FOUND (TO BE FILLED AFTER TESTING)
+═══════════════════════════════════════════════════════════════════════════════
+
+[ ] P1-01: Item search uses wrong tool
+[ ] P1-02: Response truncation on restaurant lists
+[ ] P1-03: Context loss on follow-up questions
+[ ] P1-04: Orders placed without confirmation
+[ ] P1-05: Token not persisting
+[ ] P1-06: Cuisine filter broken
+
+Additional Issues:
+_____________________________________________________________________________
+_____________________________________________________________________________
+_____________________________________________________________________________
+
+═══════════════════════════════════════════════════════════════════════════════
+NEXT STEPS AFTER TESTING
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Document all issues found in problems_updated.txt
+2. Prioritize P1 (critical) issues
+3. Create fix plan with time estimates
+4. Implement fixes
+5. Re-run tests
+6. Deploy when 95%+ tests pass
+
+===============================================================================
+END OF TEST GUIDE
+===============================================================================
+
+Ready to test! Run automated suite or follow this guide manually.

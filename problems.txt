@@ -1,1605 +1,531 @@
-=================================================
-FOODIEEXPRESS - V4.0 DEVELOPMENT ROADMAP & TASKS
-Date: October 15, 2025
-Status: ✅ 85% COMPLETE - FINAL TESTING PHASE
-Project: FoodieExpress - AI-Powered Food Ordering Platform
-Last Updated: October 15, 2025 - 6:00 PM IST
-=================================================
-
-📊 COMPLETION STATUS:
-- Core Infrastructure: 100% ✅
-- Reviews System: 100% ✅
-- Admin Dashboard: 80% ✅
-- AI Personalization: 100% ✅
-- Dockerization: 100% ✅
-- Documentation: 100% ✅
-
-🚨 REMAINING BLOCKER: MongoDB Atlas authentication failure
-   Fix Required: Valid connection string needed (see MONGODB_SETUP_GUIDE.md)
-
-📋 RECENT FIXES APPLIED:
-   ✅ Agent network binding (127.0.0.1 → 0.0.0.0)
-   ✅ Test fixture mismatch resolved
-   ✅ Proactive review prompts implemented
-   ✅ MongoDB setup guide created
-   
-=================================================
-
-EXECUTIVE SUMMARY
------------------
-This document outlines the development tasks for the FoodieExpress V4.0 upgrade. 
-Version 3.0 has successfully resolved all critical security and architectural issues, 
-establishing a stable, production-ready platform. Version 4.0 shifts focus from 
-technical debt to high-value features that enhance user engagement, provide business 
-intelligence, and streamline deployment operations.
-
-The sprint is divided into four main strategic initiatives:
-1. User Reviews & Ratings System (User Engagement)
-2. Admin Dashboard Backend (Business Intelligence)
-3. AI Personalization (Context-Aware Intelligence)
-4. Dockerization (DevOps Excellence)
-
-PRIORITY LEVELS:
-- [HIGH]   - Essential for the V4.0 release. Must be completed.
-- [MEDIUM] - Important features that enhance value. Can be deferred if time-constrained.
-- [LOW]    - Quality-of-life improvements. Nice to have.
-
-ESTIMATED TIMELINE: 4-6 weeks
-TEAM: Product Manager + Senior Software Architect + Development Team
+================================================================================
+FOOD CHATBOT AGENT - COMPREHENSIVE PROBLEM REPORT
+================================================================================
+Date: October 15, 2025 (Updated)
+Agent Version: V4.0 - OLLAMA EDITION
+Analysis Method: Deep Code Review + API Testing + Scenario Validation
+Test Status: ✅ READY FOR TESTING - Ollama Integration Complete
 
 ================================================================================
-INITIATIVE 1: USER ENGAGEMENT - REVIEWS & RATINGS SYSTEM
-================================================================================
-Goal: Implement a full-featured restaurant review and rating system to increase 
-user engagement and provide valuable social proof for restaurants.
-
-Business Value: Reviews build trust, increase conversions, and provide valuable 
-feedback to restaurants. Studies show 88% of consumers trust online reviews as 
-much as personal recommendations.
-
----
-
-✅ [TASK-001] [Backend] [HIGH] Create 'Review' Model and Schemas - **COMPLETED**
-  
-  Status: ✅ COMPLETE (October 15, 2025)
-  
-  Implementation Details:
-    - Created Review model in food_api/app/models.py
-    - Fields: user_id, username, restaurant_name, rating (1-5), comment, 
-      review_date, helpful_count, is_verified_purchase
-    - Added ReviewCreate, ReviewOut, ReviewUpdate schemas
-    - Validation: rating 1-5, comment 10-1000 chars
-    - Indexes added for performance
-  
-  Files Modified:
-    ✅ food_api/app/models.py
-    ✅ food_api/app/schemas.py
-  
-  Acceptance Criteria:
-    ✅ Review model properly inherits from Beanie Document
-    ✅ All schemas have proper validation
-    ✅ Model initialized in database.py
-    ✅ No import errors or type conflicts
-
-  Actual Time: 2 hours
-
----
-  
-  Problem: 
-    The application lacks a database model to store user reviews and ratings. 
-    Without this foundation, we cannot implement the review system.
-  
-  Action Required:
-    1. Open `food_api/app/models.py`
-    2. Define a new Beanie `Document` class named `Review` with the following fields:
-       - id: str (auto-generated ObjectId)
-       - user_id: str (reference to User document)
-       - username: str (for display purposes, denormalized)
-       - restaurant_name: str (reference to restaurant)
-       - rating: int (1-5 scale, with validation)
-       - comment: str (optional, max 1000 characters)
-       - review_date: datetime (auto-set to current timestamp)
-       - helpful_count: int (default 0, for future feature)
-       - is_verified_purchase: bool (default False, for future feature)
-    
-    3. Open `food_api/app/schemas.py`
-    4. Create Pydantic schemas:
-       - `ReviewCreate`: Input schema (restaurant_name, rating, comment)
-       - `ReviewOut`: Output schema (all fields including id and formatted date)
-       - `ReviewUpdate`: Update schema (rating, comment only)
-    
-    5. Add validation:
-       - Rating must be between 1 and 5
-       - Comment length between 10 and 1000 characters (if provided)
-       - Restaurant name must be non-empty
-  
-  Files to Modify:
-    - food_api/app/models.py
-    - food_api/app/schemas.py
-  
-  Acceptance Criteria:
-    ✓ Review model properly inherits from Beanie Document
-    ✓ All schemas have proper validation
-    ✓ Model can be initialized in database.py
-    ✓ No import errors or type conflicts
-
-  Estimated Time: 2-3 hours
-
----
-
-✅ [TASK-002] [Backend] [HIGH] Implement Review API Endpoints - **COMPLETED**
-  
-  Status: ✅ COMPLETE (October 15, 2025)
-  
-  Implementation Details:
-    - POST /restaurants/{name}/reviews - Submit review ✅
-    - GET /restaurants/{name}/reviews - Get reviews with pagination ✅
-    - PUT /reviews/{id} - Update own review ✅
-    - DELETE /reviews/{id} - Delete own review ✅
-    - GET /users/me/reviews - Get user's review history ✅
-    - Duplicate prevention implemented ✅
-    - XSS protection via schema validation ✅
-  
-  Files Modified:
-    ✅ food_api/app/main.py (5 new endpoints)
-    ✅ OpenAPI documentation complete
-  
-  Acceptance Criteria:
-    ✅ All endpoints documented with OpenAPI descriptions
-    ✅ Proper error handling (404, 401, 403)
-    ✅ Users can only modify their own reviews
-    ✅ Duplicate review prevention works
-    ✅ Pagination works correctly
-    ⚠️ API tests pass (blocked by MongoDB connection)
-
-  Actual Time: 4 hours
-
----
-  
-  Problem: 
-    Users have no way to submit or view reviews via the API. The frontend and 
-    AI agent cannot interact with review data.
-  
-  Action Required:
-    1. Open `food_api/app/crud.py`
-    2. Create CRUD operations:
-       - `create_review(review_data, user_id, username)`: Insert new review
-       - `get_reviews_by_restaurant(restaurant_name, limit, skip)`: Fetch reviews with pagination
-       - `get_user_reviews(user_id)`: Fetch all reviews by specific user
-       - `update_review(review_id, update_data, user_id)`: Update user's own review
-       - `delete_review(review_id, user_id)`: Delete user's own review
-       - `get_average_rating(restaurant_name)`: Calculate average rating
-    
-    3. Open `food_api/app/main.py`
-    4. Create new API endpoints under `/restaurants/{restaurant_name}/reviews`:
-       
-       A. POST /restaurants/{restaurant_name}/reviews
-          - Protected endpoint (requires authentication)
-          - Accepts ReviewCreate schema
-          - Validates user hasn't already reviewed this restaurant
-          - Calls create_review() with current user's data
-          - Returns 201 Created with ReviewOut schema
-       
-       B. GET /restaurants/{restaurant_name}/reviews
-          - Public endpoint (no authentication required)
-          - Query parameters: limit (default 10), skip (default 0)
-          - Returns list of ReviewOut objects
-          - Includes average rating in response metadata
-       
-       C. PUT /reviews/{review_id}
-          - Protected endpoint
-          - Validates review belongs to current user
-          - Accepts ReviewUpdate schema
-          - Returns updated ReviewOut
-       
-       D. DELETE /reviews/{review_id}
-          - Protected endpoint
-          - Validates review belongs to current user
-          - Returns 204 No Content
-       
-       E. GET /users/me/reviews
-          - Protected endpoint
-          - Returns all reviews by current user
-  
-  Files to Modify:
-    - food_api/app/crud.py
-    - food_api/app/main.py
-  
-  Acceptance Criteria:
-    ✓ All endpoints documented with OpenAPI descriptions
-    ✓ Proper error handling (404, 401, 403)
-    ✓ Users can only modify their own reviews
-    ✓ Duplicate review prevention works
-    ✓ Pagination works correctly
-    ✓ API tests pass
-
-  Estimated Time: 6-8 hours
-
----
-
-✅ [TASK-003] [AI Agent] [HIGH] Create AI Tools for Reviews - **COMPLETED**
-  
-  Status: ✅ COMPLETE (October 15, 2025)
-  
-  Implementation Details:
-    - add_review tool function created ✅
-    - get_reviews tool function created ✅
-    - get_my_reviews tool function created ✅
-    - All tools registered with Gemini function calling ✅
-    - Agent system prompt updated ✅
-  
-  Files Modified:
-    ✅ food_chatbot_agent/agent.py
-  
-  Acceptance Criteria:
-    ✅ Agent can submit reviews when asked
-    ✅ Agent can fetch and present reviews naturally
-    ✅ Error messages are user-friendly
-    ✅ Tools properly registered with Gemini
-    ⚠️ Agent suggests reviews (partial - logic exists)
-
-  Actual Time: 3 hours
-
----
-  
-  Problem: 
-    The AI chatbot agent is not aware of the new review functionality. Users 
-    cannot use natural language to submit or query reviews through the assistant.
-  
-  Action Required:
-    1. Open `food_chatbot_agent/agent.py`
-    2. Import the necessary API client functions
-    3. Create tool function: `add_review_tool`
-       - Parameters: restaurant_name, rating, comment, user_token
-       - Validates rating is 1-5
-       - Makes POST request to review endpoint with authentication
-       - Returns success/failure message in natural language
-       - Handles errors gracefully (e.g., "already reviewed")
-    
-    4. Create tool function: `get_reviews_tool`
-       - Parameters: restaurant_name, limit (optional)
-       - Makes GET request to reviews endpoint
-       - Formats output as readable summary:
-         * Average rating (e.g., "4.5 out of 5 stars")
-         * Number of reviews
-         * Recent reviews with username, rating, and comment
-       - Returns formatted string for LLM to present to user
-    
-    5. Create tool function: `get_my_reviews_tool`
-       - Parameters: user_token
-       - Fetches current user's review history
-       - Formats as readable list
-    
-    6. Register all three tools with the Gemini function calling system
-    
-    7. Update the agent's system prompt to include:
-       - Information about the review feature
-       - When to proactively suggest leaving a review
-       - How to help users explore reviews
-  
-  Files to Modify:
-    - food_chatbot_agent/agent.py
-  
-  Acceptance Criteria:
-    ✓ Agent can successfully submit reviews when asked
-    ✓ Agent can fetch and present reviews naturally
-    ✓ Error messages are user-friendly
-    ✓ Tools are properly registered with Gemini
-    ✓ Agent suggests reviews at appropriate times
-
-  Estimated Time: 4-5 hours
-
----
-
-⚠️ [TASK-004] [AI Agent] [MEDIUM] Implement Proactive Review Prompts - **COMPLETED** ✅
-  
-  Status: ✅ COMPLETE (October 15, 2025 - 6:00 PM)
-  
-  Implementation Details:
-    - Order tracking dictionary added (recent_orders) ✅
-    - State tracking with turns_since_order counter ✅
-    - Prompt triggers after 2 conversational turns ✅
-    - Checks if review already submitted ✅
-    - Auto-clears tracking after 5 turns ✅
-    - Natural, personalized prompts with restaurant name ✅
-  
-  Files Modified:
-    ✅ food_chatbot_agent/agent.py (lines 58, 587-593, 1350-1385)
-  
-  Example Output:
-    "By the way, how was your experience with Swati Snacks? 
-     I'd love to hear your feedback! ⭐"
-  
-  Actual Time: 2 hours
-
----
-
-✅ [TASK-005] [Frontend] [MEDIUM] Display Reviews in Chat Interface - **COMPLETED**
-  
-  Problem: 
-    The user experience is reactive. The agent only responds to direct questions.
-    To maximize engagement, the agent should proactively encourage review 
-    submission after positive interactions.
-  
-  Action Required:
-    1. Open `food_chatbot_agent/agent.py`
-    2. Implement conversation state tracking:
-       - Track when an order is successfully placed
-       - Store restaurant name in session state
-       - Set a flag: "order_completed"
-    
-    3. Add post-order follow-up logic:
-       - After order confirmation, wait for 1-2 conversation turns
-       - Check if user is authenticated
-       - If yes, proactively ask: "How was your experience with [Restaurant]? 
-         Would you like to leave a quick review to help other foodies?"
-       - If user agrees, guide them through the review process
-       - If user declines, don't ask again in the same session
-    
-    4. Implement sentiment analysis (optional enhancement):
-       - If user expresses satisfaction during conversation, suggest review
-       - Use Gemini's natural language understanding to detect positive sentiment
-  
-  Files to Modify:
-    - food_chatbot_agent/agent.py
-  
-  Acceptance Criteria:
-    ✓ Agent prompts for reviews after successful orders
-    ✓ Prompts are contextual and not annoying
-    ✓ Users can easily decline
-    ✓ Works only for authenticated users
-    ✓ Natural and conversational tone
-
-  Estimated Time: 3-4 hours
-
----
-
-[TASK-005] [Frontend] [MEDIUM] Display Reviews in Chat Interface
-  
-  Problem:
-    The React frontend doesn't have UI components to display reviews when the
-    agent fetches them.
-  
-  Action Required:
-    1. Open `chatbot_frontend/src/components/Message.jsx`
-    2. Detect when message contains review data (JSON or structured format)
-    3. Create a ReviewCard component to display:
-       - Star rating visualization
-       - Username and date
-       - Comment text
-       - "Helpful" count
-    4. Render multiple ReviewCard components when list is returned
-    5. Add styling with Tailwind CSS for attractive presentation
-  
-  Files to Modify:
-    - chatbot_frontend/src/components/Message.jsx
-    - chatbot_frontend/src/components/ReviewCard.jsx (new file)
-  
-  Acceptance Criteria:
-    ✓ Reviews display beautifully in chat
-    ✓ Star ratings are visual (⭐⭐⭐⭐⭐)
-    ✓ Responsive design
-    ✓ Smooth animations
-
-  Estimated Time: 3-4 hours
-
-================================================================================
-INITIATIVE 2: BUSINESS INTELLIGENCE - ADMIN DASHBOARD BACKEND
-================================================================================
-Goal: Build the backend infrastructure for a basic admin dashboard that provides
-operational insights and management capabilities.
-
-Business Value: Enables data-driven decision making, platform monitoring, and
-business growth tracking without requiring direct database access.
-
----
-
-✅ [TASK-006] [Backend] [HIGH] Finalize Role-Based Access Control (RBAC) - **COMPLETED**
-  
-  Status: ✅ COMPLETE (October 15, 2025)
-  
-  Implementation:
-    - get_current_admin_user dependency created ✅
-    - Role validation working ✅
-    - make_admin.py utility script created ✅
-    - Documentation in README.md ✅
-  
-  Files Modified:
-    ✅ food_api/app/dependencies.py
-    ✅ food_api/scripts/make_admin.py
-  
-  Actual Time: 2 hours
-
----
-  
-  Problem: 
-    The `User` model was designed with a `role` field, but it's not actively 
-    enforced. Admin-only functionality lacks protection, creating potential 
-    security vulnerabilities.
-  
-  Action Required:
-    1. Open `food_api/app/models.py`
-    2. Verify the User model has a `role` field (default: "user")
-    3. Create an enum for roles: ["user", "admin", "moderator"]
-    
-    4. Open `food_api/app/dependencies.py`
-    5. Create new dependency: `get_current_admin_user`
-       - Reuses `get_current_user` dependency
-       - Checks if user.role == "admin"
-       - Raises HTTPException(403, "Admin access required") if not admin
-    
-    6. Create utility script: `food_api/scripts/make_admin.py`
-       - Connects to database
-       - Takes username or email as input
-       - Updates user's role to "admin"
-       - Usage: python make_admin.py --email admin@foodie.com
-    
-    7. Document the RBAC system in README.md
-  
-  Files to Modify:
-    - food_api/app/models.py
-    - food_api/app/dependencies.py
-    - food_api/scripts/make_admin.py (new file)
-    - README.md
-  
-  Acceptance Criteria:
-    ✓ Admin dependency properly validates role
-    ✓ Non-admin users get 403 errors
-    ✓ Script successfully promotes users to admin
-    ✓ No security loopholes
-    ✓ Documented for team
-
-  Estimated Time: 3-4 hours
-
----
-
-✅ [TASK-007] [Backend] [HIGH] Create Admin Analytics Endpoints - **COMPLETED**
-  
-  Status: ✅ COMPLETE (October 15, 2025)
-  
-  Implementation:
-    - GET /admin/stats endpoint enhanced ✅
-    - Platform statistics (8 metrics) ✅
-    - 7-day active users tracking ✅
-    - Review metrics included ✅
-    - All endpoints protected by admin RBAC ✅
-  
-  Actual Time: 3 hours
-
----
-
-❌ [TASK-008] [Backend] [MEDIUM] Implement Audit Logging - **NOT STARTED**
-  
-  Status: ❌ NOT STARTED
-  Priority: MEDIUM (deferred to V4.5)
-
----
-
-❌ [TASK-009] [Frontend] [LOW] Create Basic Admin Dashboard (Stretch Goal) - **NOT STARTED**
-  
-  Status: ❌ NOT STARTED (Stretch Goal)
-  Note: Backend API complete, frontend deferred to V5.0
-
----
-
-⚠️ [TASK-010] [AI Agent] [HIGH] Implement Personalized User Greetings - **COMPLETED** ✅
-  
-  Status: ✅ COMPLETE (Verified October 15, 2025 - 6:00 PM)
-  
-  Implementation Details:
-    - New session detection implemented ✅
-    - Fetches user profile and order history ✅
-    - Personalized greeting for returning customers ✅
-    - Different greeting for first-time users ✅
-    - Graceful fallback if API fails ✅
-    - Mentions last restaurant ordered from ✅
-  
-  Files Modified:
-    ✅ food_chatbot_agent/agent.py (lines 916-989)
-  
-  Features:
-    - "Welcome back, {username}! I see your last order was from {restaurant}"
-    - "Welcome to FoodieExpress, {username}! I'm excited to help you discover delicious food!"
-    - Natural suggestions based on order history
-  
-  Status: FULLY IMPLEMENTED - No changes needed
-
----
-
-❌ [TASK-011] [AI Agent] [MEDIUM] Implement Preference Learning - **NOT STARTED**
-❌ [TASK-012] [AI Agent] [MEDIUM] Add Conversation Memory - **NOT STARTED**
-❌ [TASK-013] [Backend] [LOW] Create User Preference API - **NOT STARTED**
-  
-  Problem: 
-    Platform administrators have no way to get an overview of business activity.
-    They need metrics and data access to make informed decisions.
-  
-  Action Required:
-    1. Open `food_api/app/crud.py`
-    2. Create admin-specific query functions:
-       - `get_platform_stats()`: Returns dict with:
-         * total_users
-         * total_orders
-         * total_revenue
-         * orders_today
-         * revenue_today
-         * active_users_last_7_days
-       
-       - `get_all_orders(limit, skip, filters)`: Paginated order list
-       - `get_revenue_by_date(start_date, end_date)`: Time series data
-       - `get_popular_restaurants(limit)`: Restaurant ranking by orders
-       - `get_user_activity()`: User engagement metrics
-    
-    3. Open `food_api/app/main.py`
-    4. Create new router: `/admin` with prefix and tags
-    5. Implement endpoints (all protected by `get_current_admin_user`):
-       
-       A. GET /admin/stats
-          - Returns platform statistics dashboard data
-          - Response: PlatformStatsOut schema
-       
-       B. GET /admin/orders
-          - Query params: limit, skip, user_id, restaurant_name, status
-          - Returns paginated order list with full details
-          - Includes user info and order items
-       
-       C. GET /admin/revenue
-          - Query params: start_date, end_date, group_by (day/week/month)
-          - Returns revenue analytics
-       
-       D. GET /admin/restaurants/popular
-          - Returns top restaurants by order volume
-          - Useful for business development decisions
-       
-       E. GET /admin/users
-          - Query params: limit, skip, role
-          - Returns user list with registration dates and activity
-       
-       F. POST /admin/users/{user_id}/role
-          - Updates user role (promote to admin, etc.)
-          - Audit log entry
-  
-  Files to Modify:
-    - food_api/app/crud.py
-    - food_api/app/main.py
-    - food_api/app/schemas.py (add admin schemas)
-  
-  Acceptance Criteria:
-    ✓ All endpoints return accurate data
-    ✓ Proper authorization on all endpoints
-    ✓ Efficient database queries (use aggregations)
-    ✓ Well-documented with OpenAPI
-    ✓ Response times under 500ms
-    ✓ API tests cover all endpoints
-
-  Estimated Time: 8-10 hours
-
----
-
-[TASK-008] [Backend] [MEDIUM] Implement Audit Logging
-  
-  Problem:
-    Admin actions need to be tracked for security and compliance. Currently,
-    there's no record of who did what and when.
-  
-  Action Required:
-    1. Create new model: `AuditLog` in `food_api/app/models.py`
-       - Fields: timestamp, user_id, username, action, resource_type, 
-         resource_id, ip_address, details (JSON)
-    
-    2. Create logging utility: `food_api/app/audit.py`
-       - Function: `log_admin_action(user, action, resource_type, resource_id, details)`
-    
-    3. Integrate audit logging into all admin endpoints
-    
-    4. Create endpoint: GET /admin/audit-logs
-       - Queryable by user, date range, action type
-       - Returns audit trail
-  
-  Files to Modify:
-    - food_api/app/models.py
-    - food_api/app/audit.py (new file)
-    - food_api/app/main.py
-  
-  Acceptance Criteria:
-    ✓ All admin actions are logged
-    ✓ Logs are searchable and filterable
-    ✓ Timestamps are accurate
-    ✓ No sensitive data in logs (passwords, tokens)
-
-  Estimated Time: 4-5 hours
-
----
-
-[TASK-009] [Frontend] [LOW] Create Basic Admin Dashboard (Stretch Goal)
-  
-  Problem:
-    Backend APIs exist but no UI to consume them.
-  
-  Action Required:
-    1. Create new React admin panel: `admin_dashboard/`
-    2. Implement authentication check for admin role
-    3. Create dashboard views:
-       - Overview with key metrics (cards)
-       - Orders table with search and filters
-       - Revenue charts (use Chart.js or Recharts)
-       - User management interface
-    4. Style with Tailwind CSS
-    5. Deploy as separate app or integrate with main frontend
-  
-  Files to Create:
-    - admin_dashboard/ (new React app)
-  
-  Acceptance Criteria:
-    ✓ Clean, professional UI
-    ✓ Real-time data from API
-    ✓ Role-based access control
-    ✓ Responsive design
-    ✓ Charts and visualizations work
-
-  Estimated Time: 12-16 hours (STRETCH GOAL)
-
-================================================================================
-INITIATIVE 3: AI PERSONALIZATION - CONTEXT-AWARE INTELLIGENCE
-================================================================================
-Goal: Enhance the AI agent to be more context-aware and personal by using user
-data, creating a more engaging and tailored experience.
-
-Business Value: Personalization increases user satisfaction and retention.
-Personalized experiences can increase conversion rates by up to 20%.
-
----
-
-[TASK-010] [AI Agent] [HIGH] Implement Personalized User Greetings
-  
-  Problem: 
-    The agent treats every user the same, ignoring their identity and history.
-    This creates a generic, impersonal experience that doesn't leverage the
-    power of AI to build relationships.
-  
-  Action Required:
-    1. Open `food_chatbot_agent/agent.py`
-    2. Modify the conversation initialization flow:
-       - Check if user is authenticated (token present in session)
-       - If not authenticated: Standard greeting
-       - If authenticated: Personalized greeting
-    
-    3. For authenticated users, fetch context:
-       - Call `/users/me` endpoint to get username
-       - Call `/orders/` endpoint with limit=1 to get most recent order
-       - Call `/restaurants/{name}/reviews` to check if they've reviewed
-    
-    4. Generate personalized greeting using fetched data:
-       Example: "Welcome back, Meet! 😊 I see you last ordered from Swati Snacks 
-       3 days ago. Feeling like some more delicious Indian street food, or shall 
-       we explore something new today?"
-    
-    5. Implement greeting variations based on:
-       - Time since last order (new user, returning user, loyal customer)
-       - Cuisine preferences (derived from order history)
-       - Review activity (engaged user, silent user)
-    
-    6. Update system prompt to include personalization guidelines:
-       - Use username naturally in conversation
-       - Reference past orders when relevant
-       - Suggest similar restaurants based on history
-       - Acknowledge user's preferences
-  
-  Files to Modify:
-    - food_chatbot_agent/agent.py
-  
-  Acceptance Criteria:
-    ✓ Authenticated users get personalized greetings
-    ✓ Greetings reference actual user data
-    ✓ Natural and not creepy
-    ✓ Graceful fallback if API calls fail
-    ✓ Performance impact minimal (caching)
-
-  Estimated Time: 4-5 hours
-
----
-
-[TASK-011] [AI Agent] [MEDIUM] Implement Preference Learning
-  
-  Problem:
-    The agent doesn't learn from user behavior. It can't make intelligent
-    recommendations based on past interactions.
-  
-  Action Required:
-    1. Create analytics functions in agent:
-       - `analyze_user_preferences(user_token)`: 
-         * Fetch order history
-         * Extract cuisine types, price ranges, dietary patterns
-         * Return preference profile
-       
-       - `get_similar_restaurants(preferences)`:
-         * Query restaurant list
-         * Filter/rank by preference match
-         * Return recommendations
-    
-    2. Implement recommendation feature:
-       - When user asks "What should I eat?" or similar
-       - Agent analyzes preferences
-       - Suggests restaurants with explanation:
-         "Based on your love for Gujarati cuisine and preference for vegetarian 
-         options, I think you'll really enjoy Rajwadu. They have excellent 
-         traditional thalis!"
-    
-    3. Track conversation context:
-       - Remember what user asked about in current session
-       - Don't repeat same suggestions
-       - Learn from rejections (if user says no to suggestion)
-  
-  Files to Modify:
-    - food_chatbot_agent/agent.py
-  
-  Acceptance Criteria:
-    ✓ Recommendations are relevant
-    ✓ Explanations are provided
-    ✓ Learns from user feedback
-    ✓ Doesn't require explicit preference input
-
-  Estimated Time: 6-8 hours
-
----
-
-[TASK-012] [AI Agent] [MEDIUM] Add Conversation Memory
-  
-  Problem:
-    Each conversation is independent. The agent doesn't remember what was
-    discussed earlier in the session.
-  
-  Action Required:
-    1. Implement conversation memory system:
-       - Store message history in session (Redis)
-       - Include last 10 messages in Gemini context
-       - Implement context summarization for longer conversations
-    
-    2. Enable cross-message understanding:
-       - "Add that to my cart" (referring to previous message)
-       - "What about the other option?" (referring to alternative)
-       - "Change the quantity to 3" (referring to current cart item)
-    
-    3. Implement conversation state machine:
-       - States: browsing, ordering, reviewing, support
-       - Track current state
-       - Provide appropriate actions per state
-  
-  Files to Modify:
-    - food_chatbot_agent/agent.py
-  
-  Acceptance Criteria:
-    ✓ Agent remembers conversation context
-    ✓ Can reference previous messages
-    ✓ Natural back-and-forth dialogue
-    ✓ State transitions are smooth
-
-  Estimated Time: 5-6 hours
-
----
-
-[TASK-013] [Backend] [LOW] Create User Preference API
-  
-  Problem:
-    User preferences are inferred but not explicitly stored. Having a preference
-    API allows for better personalization and user control.
-  
-  Action Required:
-    1. Create `UserPreferences` model:
-       - user_id, favorite_cuisines[], dietary_restrictions[], 
-         max_price_range, preferred_restaurants[]
-    
-    2. Create endpoints:
-       - GET /users/me/preferences
-       - PUT /users/me/preferences
-    
-    3. Integrate with agent for more accurate recommendations
-  
-  Files to Modify:
-    - food_api/app/models.py
-    - food_api/app/main.py
-    - food_api/app/schemas.py
-  
-  Acceptance Criteria:
-    ✓ Users can view/update preferences
-    ✓ Agent uses preferences when available
-    ✓ Privacy-respecting design
-
-  Estimated Time: 3-4 hours
-
-================================================================================
-INITIATIVE 4: DEVOPS EXCELLENCE - DOCKERIZATION
-================================================================================
-Goal: Containerize the entire application stack using Docker to ensure 
-portability, simplify deployment, and enable scalability.
-
-Business Value: Reduces deployment time from hours to minutes. Ensures 
-consistency across development, staging, and production environments. Enables
-easy scaling and CI/CD integration.
-
----
-
-✅ [TASK-014] [DevOps] [HIGH] Create Dockerfile for FastAPI Backend - **COMPLETED**
-✅ [TASK-015] [DevOps] [HIGH] Create Dockerfile for Flask AI Agent - **COMPLETED**
-✅ [TASK-016] [DevOps] [HIGH] Create Docker Compose Orchestration - **COMPLETED**
-  
-  Status: ✅ ALL DOCKER TASKS COMPLETE (October 15, 2025)
-  
-  Achievements:
-    - Multi-stage builds implemented ✅
-    - Health checks on all services ✅
-    - docker-compose.yml with 4 services ✅
-    - .env configuration complete ✅
-    - START_DOCKER.bat script created ✅
-    - Comprehensive documentation ✅
-  
-  Containers Running:
-    ✅ foodie-redis (healthy)
-    ✅ foodie-agent (healthy)
-    ⚠️ foodie-backend (unhealthy - DB issue)
-    ❌ foodie-frontend (waiting for backend)
-  
-  Actual Time: 8 hours total
-
----
-
-⚠️ [TASK-017] [DevOps] [MEDIUM] Create Production Docker Compose Configuration - **PARTIAL**
-  
-  Status: ⚠️ DEV CONFIG COMPLETE
-  Note: Production hardening needed
-
----
-
-✅ [TASK-018] [Frontend] [HIGH] Create Dockerfile for React Frontend - **COMPLETED**
-✅ [TASK-019] [DevOps] [MEDIUM] Add Container Health Checks - **COMPLETED**
-❌ [TASK-020] [DevOps] [LOW] Setup Docker Registry & CI/CD - **NOT STARTED** (Stretch Goal)
-
----
-
-✅ [TASK-021] [Testing] [MEDIUM] Expand Test Coverage - **TESTS WRITTEN**
-  
-  Status: ✅ TEST SUITE COMPLETE (Cannot Execute)
-  
-  Implementation:
-    - test_api_reviews.py created (400+ lines) ✅
-    - 15+ test cases for review endpoints ✅
-    - Auth tests, validation tests, CRUD tests ✅
-    - XSS protection tests ✅
-    - Pagination tests ✅
-  
-  Blocker: MongoDB connection needed to execute tests
-
----
-
-✅ [TASK-022] [Documentation] [MEDIUM] Create Comprehensive API Documentation - **COMPLETED**
-  
-  Status: ✅ COMPLETE
-  
-  Created Files:
-    ✅ README.md (V4.0 comprehensive guide)
-    ✅ QUICK_START.md (Setup instructions)
-    ✅ TEST_REPORT.md (System test results)
-    ✅ START_DOCKER.bat (Windows script)
-    ✅ .env.example (Configuration template)
-  
-  Actual Time: 4 hours
-
----
-
-⚠️ [TASK-023] [Security] [HIGH] Security Audit & Hardening - **PARTIAL**
-  Status: ⚠️ PARTIAL
-  Done: RBAC ✅, Input validation ✅, JWT auth ✅
-  Needed: Rate limiting, security headers, penetration testing
-
-❌ [TASK-024] [Performance] [MEDIUM] Performance Optimization - **NOT STARTED**
-❌ [TASK-025] [Monitoring] [LOW] Add Logging & Monitoring - **NOT STARTED**
-  
-  Problem: 
-    The FastAPI backend requires manual setup of Python environment, dependency
-    installation, and configuration. This is error-prone and time-consuming.
-    Different developers may have different environments leading to "works on 
-    my machine" problems.
-  
-  Action Required:
-    1. Verify the existing `food_api/Dockerfile` or create new one
-    2. Dockerfile should include:
-       
-       ```dockerfile
-       # Use official Python runtime
-       FROM python:3.11-slim
-       
-       # Set working directory
-       WORKDIR /app
-       
-       # Install system dependencies
-       RUN apt-get update && apt-get install -y \
-           gcc \
-           && rm -rf /var/lib/apt/lists/*
-       
-       # Copy requirements and install Python dependencies
-       COPY requirements.txt .
-       RUN pip install --no-cache-dir -r requirements.txt
-       
-       # Copy application code
-       COPY . .
-       
-       # Expose port
-       EXPOSE 8000
-       
-       # Set environment variables
-       ENV PYTHONUNBUFFERED=1
-       
-       # Run the application
-       CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-       ```
-    
-    3. Create `.dockerignore` file:
-       - Exclude __pycache__, .env, *.pyc, tests/, .git/
-    
-    4. Create `food_api/.env.example`:
-       - Document all required environment variables
-       - Provide example values (not real secrets)
-    
-    5. Test the Docker image:
-       - Build: `docker build -t foodie-api .`
-       - Run: `docker run -p 8000:8000 --env-file .env foodie-api`
-       - Verify all endpoints work
-  
-  Files to Modify/Create:
-    - food_api/Dockerfile (verify/update)
-    - food_api/.dockerignore
-    - food_api/.env.example
-  
-  Acceptance Criteria:
-    ✓ Image builds without errors
-    ✓ Container starts and serves API
-    ✓ All environment variables work
-    ✓ Image size is optimized (< 500MB)
-    ✓ Health check endpoint works
-    ✓ Logs are visible via docker logs
-
-  Estimated Time: 3-4 hours
-
----
-
-[TASK-015] [DevOps] [HIGH] Create Dockerfile for Flask AI Agent
-  
-  Problem: 
-    The Flask-based AI agent also requires manual environment setup. It depends
-    on the FastAPI backend and needs proper configuration.
-  
-  Action Required:
-    1. Verify the existing `food_chatbot_agent/Dockerfile` or create new one
-    2. Dockerfile should include:
-       
-       ```dockerfile
-       FROM python:3.11-slim
-       
-       WORKDIR /app
-       
-       # Install dependencies
-       COPY requirements.txt .
-       RUN pip install --no-cache-dir -r requirements.txt
-       
-       # Copy application
-       COPY . .
-       
-       # Expose Flask port
-       EXPOSE 5000
-       
-       ENV PYTHONUNBUFFERED=1
-       ENV FLASK_APP=agent.py
-       
-       # Run Flask
-       CMD ["python", "agent.py"]
-       ```
-    
-    3. Create `.dockerignore`
-    4. Create `.env.example` with:
-       - GEMINI_API_KEY
-       - FOOD_API_URL (will point to Docker service name)
-       - REDIS_URL
-    
-    5. Test the Docker image independently
-  
-  Files to Modify/Create:
-    - food_chatbot_agent/Dockerfile (verify/update)
-    - food_chatbot_agent/.dockerignore
-    - food_chatbot_agent/.env.example
-  
-  Acceptance Criteria:
-    ✓ Image builds successfully
-    ✓ Agent starts and can connect to API
-    ✓ WebSocket connections work
-    ✓ Gemini API integration functional
-
-  Estimated Time: 2-3 hours
-
----
-
-[TASK-016] [DevOps] [HIGH] Create Docker Compose Orchestration
-  
-  Problem: 
-    Starting all services (FastAPI, Flask Agent, MongoDB, Redis) requires 
-    multiple terminal windows and manual coordination. Configuration is complex
-    and error-prone. Developers waste time on setup instead of development.
-  
-  Action Required:
-    1. Create/update `docker-compose.yml` in project root:
-       
-       ```yaml
-       version: '3.8'
-       
-       services:
-         mongodb:
-           image: mongo:7.0
-           container_name: foodie-mongodb
-           ports:
-             - "27017:27017"
-           environment:
-             MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
-             MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
-           volumes:
-             - mongodb_data:/data/db
-           networks:
-             - foodie-network
-         
-         redis:
-           image: redis:7-alpine
-           container_name: foodie-redis
-           ports:
-             - "6379:6379"
-           networks:
-             - foodie-network
-         
-         api:
-           build:
-             context: ./food_api
-             dockerfile: Dockerfile
-           container_name: foodie-api
-           ports:
-             - "8000:8000"
-           environment:
-             MONGODB_URL: mongodb://mongodb:27017
-             REDIS_URL: redis://redis:6379
-             JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-           env_file:
-             - ./food_api/.env
-           depends_on:
-             - mongodb
-             - redis
-           networks:
-             - foodie-network
-           volumes:
-             - ./food_api:/app
-           command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-         
-         agent:
-           build:
-             context: ./food_chatbot_agent
-             dockerfile: Dockerfile
-           container_name: foodie-agent
-           ports:
-             - "5000:5000"
-           environment:
-             FOOD_API_URL: http://api:8000
-             REDIS_URL: redis://redis:6379
-             GEMINI_API_KEY: ${GEMINI_API_KEY}
-           env_file:
-             - ./food_chatbot_agent/.env
-           depends_on:
-             - api
-             - redis
-           networks:
-             - foodie-network
-           volumes:
-             - ./food_chatbot_agent:/app
-         
-         frontend:
-           build:
-             context: ./chatbot_frontend
-             dockerfile: Dockerfile
-           container_name: foodie-frontend
-           ports:
-             - "5173:5173"
-           environment:
-             VITE_AGENT_URL: http://localhost:5000
-             VITE_API_URL: http://localhost:8000
-           depends_on:
-             - agent
-           networks:
-             - foodie-network
-       
-       networks:
-         foodie-network:
-           driver: bridge
-       
-       volumes:
-         mongodb_data:
-       ```
-    
-    2. Create root `.env.example`:
-       - Template for all environment variables
-       - Clear documentation
-    
-    3. Create startup scripts:
-       - `start-dev.bat` (Windows): docker-compose up
-       - `start-prod.bat`: docker-compose -f docker-compose.prod.yml up
-    
-    4. Update README.md with Docker instructions:
-       - Prerequisites (Docker Desktop)
-       - Setup steps
-       - Common commands
-       - Troubleshooting
-  
-  Files to Modify/Create:
-    - docker-compose.yml (update/verify)
-    - .env.example (root level)
-    - start-dev.bat
-    - start-prod.bat
-    - README.md
-  
-  Acceptance Criteria:
-    ✓ All services start with one command
-    ✓ Services can communicate with each other
-    ✓ Environment variables work correctly
-    ✓ Data persists across restarts (volumes)
-    ✓ Hot reloading works for development
-    ✓ Logs are accessible via docker-compose logs
-    ✓ Services restart on failure
-    ✓ Documentation is clear and complete
-
-  Estimated Time: 5-6 hours
-
----
-
-[TASK-017] [DevOps] [MEDIUM] Create Production Docker Compose Configuration
-  
-  Problem:
-    Development and production have different requirements. Need separate config
-    for production deployment.
-  
-  Action Required:
-    1. Create `docker-compose.prod.yml`:
-       - Remove volume mounts (use image code)
-       - Disable hot reloading
-       - Add restart policies: always
-       - Configure resource limits (CPU, memory)
-       - Use production-grade gunicorn instead of uvicorn --reload
-       - Add health checks
-    
-    2. Create production Dockerfiles:
-       - Multi-stage builds to reduce image size
-       - Security hardening
-       - Non-root user
-    
-    3. Document production deployment process
-  
-  Files to Create:
-    - docker-compose.prod.yml
-    - food_api/Dockerfile.prod
-    - food_chatbot_agent/Dockerfile.prod
-    - PRODUCTION_DEPLOYMENT_GUIDE.md (update)
-  
-  Acceptance Criteria:
-    ✓ Production config is secure
-    ✓ Images are optimized
-    ✓ Health checks work
-    ✓ Resource limits prevent crashes
-    ✓ Restart policies handle failures
-
-  Estimated Time: 4-5 hours
-
----
-
-[TASK-018] [Frontend] [HIGH] Create Dockerfile for React Frontend
-  
-  Problem:
-    The React frontend needs containerization for consistency.
-  
-  Action Required:
-    1. Create `chatbot_frontend/Dockerfile`:
-       - Multi-stage build: node:18 for build, nginx for serving
-       - Install dependencies
-       - Build production bundle
-       - Serve with Nginx
-    
-    2. Create nginx configuration:
-       - Serve static files
-       - SPA routing support
-       - Gzip compression
-    
-    3. Update docker-compose to include frontend
-  
-  Files to Create:
-    - chatbot_frontend/Dockerfile
-    - chatbot_frontend/nginx.conf
-  
-  Acceptance Criteria:
-    ✓ Frontend builds successfully
-    ✓ Static assets served efficiently
-    ✓ Routing works (no 404s on refresh)
-    ✓ Fast load times
-
-  Estimated Time: 3-4 hours
-
----
-
-[TASK-019] [DevOps] [MEDIUM] Add Container Health Checks
-  
-  Problem:
-    Containers may be running but services might be unhealthy (database 
-    connection failed, API crashed, etc.). Need automated health monitoring.
-  
-  Action Required:
-    1. Add health check endpoints:
-       - `GET /health` in FastAPI (checks database connectivity)
-       - `GET /health` in Flask Agent (checks API connectivity)
-    
-    2. Update Dockerfiles with HEALTHCHECK instruction:
-       ```dockerfile
-       HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-         CMD curl -f http://localhost:8000/health || exit 1
-       ```
-    
-    3. Configure docker-compose health checks:
-       - Define depends_on with conditions
-       - Services wait for dependencies to be healthy
-  
-  Files to Modify:
-    - food_api/app/main.py
-    - food_chatbot_agent/agent.py
-    - food_api/Dockerfile
-    - food_chatbot_agent/Dockerfile
-    - docker-compose.yml
-  
-  Acceptance Criteria:
-    ✓ Health endpoints return correct status
-    ✓ Unhealthy containers restart automatically
-    ✓ Docker reports health status correctly
-    ✓ Dependent services wait for health
-
-  Estimated Time: 2-3 hours
-
----
-
-[TASK-020] [DevOps] [LOW] Setup Docker Registry & CI/CD (Stretch Goal)
-  
-  Problem:
-    Manual building and deploying is slow. Need automated pipeline.
-  
-  Action Required:
-    1. Setup GitHub Actions or GitLab CI:
-       - Trigger on push to main branch
-       - Run tests
-       - Build Docker images
-       - Push to Docker Hub or private registry
-       - Deploy to staging environment
-    
-    2. Create deployment scripts:
-       - Pull latest images
-       - Restart services
-       - Health check verification
-    
-    3. Document CI/CD pipeline
-  
-  Files to Create:
-    - .github/workflows/docker-build.yml
-    - .github/workflows/deploy.yml
-    - deploy.sh
-  
-  Acceptance Criteria:
-    ✓ Automated builds on commit
-    ✓ Tests run before deployment
-    ✓ One-click deployment
-    ✓ Rollback capability
-
-  Estimated Time: 8-10 hours (STRETCH GOAL)
-
-================================================================================
-ADDITIONAL QUALITY & POLISH TASKS
+� CRITICAL BLOCKER - AGENT CANNOT RUN
 ================================================================================
 
-[TASK-021] [Testing] [MEDIUM] Expand Test Coverage
-  
-  Problem:
-    Current test coverage is limited. Need comprehensive tests for new features.
-  
-  Action Required:
-    1. Write tests for review system:
-       - Unit tests for CRUD operations
-       - API endpoint tests
-       - Edge cases (duplicate reviews, invalid ratings)
-    
-    2. Write tests for admin endpoints:
-       - Authorization tests
-       - Data accuracy tests
-    
-    3. Write integration tests:
-       - Full user flow tests
-       - Docker environment tests
-    
-    4. Aim for 80%+ code coverage
-  
-  Files to Modify:
-    - food_api/tests/ (multiple test files)
-  
-  Estimated Time: 8-10 hours
+P0-01: [CONFIGURATION] Google Gemini API Key Invalid/Missing
+────────────────────────────────────────────────────────────────────────────────
+SEVERITY: 🔴 BLOCKER - Agent completely non-functional
+CATEGORY: Configuration
 
----
+ERROR MESSAGE:
+"400 API key not valid. Please pass a valid API key. 
+[reason: API_KEY_INVALID, domain: googleapis.com]"
 
-[TASK-022] [Documentation] [MEDIUM] Create Comprehensive API Documentation
-  
-  Problem:
-    OpenAPI docs exist but need enhancement. Need user guides and examples.
-  
-  Action Required:
-    1. Enhance OpenAPI descriptions:
-       - Detailed endpoint descriptions
-       - Request/response examples
-       - Error code documentation
-    
-    2. Create API usage guide:
-       - Authentication flow
-       - Common use cases
-       - Code examples (Python, JavaScript)
-    
-    3. Create Postman collection:
-       - All endpoints
-       - Example requests
-       - Environment variables
-  
-  Files to Create/Modify:
-    - API_GUIDE.md
-    - postman_collection.json
-    - food_api/app/main.py (enhance descriptions)
-  
-  Estimated Time: 4-6 hours
+ROOT CAUSE:
+The GOOGLE_API_KEY environment variable in .env file is either:
+1. Missing completely
+2. Invalid/expired
+3. Not properly loaded by the Flask agent
 
----
+AFFECTED CODE:
+food_chatbot_agent/agent.py, Lines 24-27:
+```python
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    raise ValueError("❌ CRITICAL: GOOGLE_API_KEY not found in .env file")
+genai.configure(api_key=GOOGLE_API_KEY)
+```
 
-[TASK-023] [Security] [HIGH] Security Audit & Hardening
-  
-  Problem:
-    Before production, need thorough security review.
-  
-  Action Required:
-    1. Implement rate limiting:
-       - API endpoints (prevent abuse)
-       - Login attempts (prevent brute force)
-    
-    2. Add input validation:
-       - SQL injection prevention (already using MongoDB, but validate)
-       - XSS prevention in comments
-       - CORS configuration
-    
-    3. Secrets management:
-       - Use Docker secrets for production
-       - Rotate JWT secrets regularly
-       - Secure API keys
-    
-    4. Security headers:
-       - HTTPS enforcement
-       - Content Security Policy
-       - X-Frame-Options
-    
-    5. Run security scan:
-       - Use tools like Bandit, Safety
-       - Dependency vulnerability check
-  
-  Files to Modify:
-    - food_api/app/main.py
-    - food_api/app/security.py
-    - docker-compose.prod.yml
-  
-  Estimated Time: 6-8 hours
+EVIDENCE:
+Direct API test returned: "API key not valid. Please pass a valid API key."
+All chat requests return 500 errors due to this underlying issue.
 
----
+IMPACT:
+- 🔴 Agent completely non-functional
+- 🔴 ALL user questions return errors
+- 🔴 No AI processing possible
+- 🔴 Cannot test any other functionality
 
-[TASK-024] [Performance] [MEDIUM] Performance Optimization
-  
-  Problem:
-    As user base grows, need to ensure application scales.
-  
-  Action Required:
-    1. Database optimization:
-       - Add indexes (user_id, restaurant_name, review_date)
-       - Query optimization
-       - Connection pooling
-    
-    2. Caching layer:
-       - Cache restaurant list (Redis)
-       - Cache popular queries
-       - Implement TTL strategies
-    
-    3. API response optimization:
-       - Pagination everywhere
-       - Response compression
-       - Field selection (partial responses)
-    
-    4. Load testing:
-       - Use Locust or Apache Bench
-       - Simulate 100+ concurrent users
-       - Identify bottlenecks
-  
-  Files to Modify:
-    - food_api/app/database.py
-    - food_api/app/main.py
-    - food_api/app/crud.py
-  
-  Estimated Time: 6-8 hours
+FIX REQUIRED:
+1. Check food_chatbot_agent/.env file
+2. Obtain valid Google Gemini API key from: https://makersuite.google.com/app/apikey
+3. Update .env with: GOOGLE_API_KEY=your_valid_key_here
+4. Restart Flask agent: python agent.py
 
----
+PRIORITY: P0 - MUST FIX BEFORE ANY TESTING
+EFFORT: 5-10 minutes (just configuration)
 
-[TASK-025] [Monitoring] [LOW] Add Logging & Monitoring
-  
-  Problem:
-    Production issues are hard to diagnose without proper logging.
-  
-  Action Required:
-    1. Structured logging:
-       - Use Python logging module properly
-       - Log levels (DEBUG, INFO, WARNING, ERROR)
-       - Request ID tracking
-    
-    2. Application metrics:
-       - Request count, response times
-       - Error rates
-       - Database query performance
-    
-    3. Optional: Integrate monitoring tools
-       - Prometheus + Grafana
-       - ELK stack (Elasticsearch, Logstash, Kibana)
-       - Simple dashboard
-  
-  Files to Modify:
-    - food_api/app/main.py
-    - food_chatbot_agent/agent.py
-    - docker-compose.yml (add monitoring services)
-  
-  Estimated Time: 5-6 hours (basic), 12-15 hours (full stack)
+WITHOUT THIS FIX, NO OTHER TESTING IS POSSIBLE.
 
 ================================================================================
-IMPLEMENTATION ROADMAP - RECOMMENDED ORDER
+ASSUMING API KEY IS FIXED - PREDICTED ISSUES FROM CODE REVIEW
 ================================================================================
 
-WEEK 1: DOCKERIZATION FOUNDATION
-  Day 1-2: TASK-014, TASK-015 (Dockerfiles for API and Agent)
-  Day 3-4: TASK-016 (Docker Compose orchestration)
-  Day 5:   TASK-018, TASK-019 (Frontend Docker, Health checks)
-
-WEEK 2-3: REVIEWS SYSTEM
-  Day 6-7:   TASK-001, TASK-002 (Backend models, schemas, endpoints)
-  Day 8-9:   TASK-003 (AI agent tools for reviews)
-  Day 10:    TASK-004, TASK-005 (Proactive prompts, frontend display)
-  Day 11-12: TASK-021 (Testing reviews system)
-
-WEEK 3-4: ADMIN DASHBOARD BACKEND
-  Day 13-14: TASK-006 (RBAC implementation)
-  Day 15-16: TASK-007 (Admin analytics endpoints)
-  Day 17:    TASK-008 (Audit logging)
-  Day 18:    Testing and refinement
-
-WEEK 4-5: AI PERSONALIZATION
-  Day 19-20: TASK-010 (Personalized greetings)
-  Day 21-22: TASK-011 (Preference learning)
-  Day 23:    TASK-012 (Conversation memory)
-  Day 24:    TASK-013 (User preferences API)
-
-WEEK 5-6: QUALITY & PRODUCTION READINESS
-  Day 25-26: TASK-023 (Security audit)
-  Day 27-28: TASK-024 (Performance optimization)
-  Day 29:    TASK-022 (Documentation)
-  Day 30:    TASK-017 (Production Docker config)
-
-STRETCH GOALS (If time permits):
-  - TASK-009: Admin Dashboard Frontend (12-16 hours)
-  - TASK-020: CI/CD Pipeline (8-10 hours)
-  - TASK-025: Monitoring Stack (12-15 hours)
+The following issues were identified through comprehensive code analysis.
+These CANNOT be tested until P0-01 is fixed, but are high-probability based
+on code structure, system instructions, and known patterns.
 
 ================================================================================
-SUCCESS METRICS - V4.0 RELEASE CRITERIA
+🔴 PRIORITY 1 - CRITICAL ISSUES (Must Fix After API Key)
 ================================================================================
 
-FUNCTIONAL REQUIREMENTS:
-✓ Users can submit and view restaurant reviews
-✓ Admin dashboard provides business insights
-✓ AI agent provides personalized recommendations
-✓ Entire stack runs via docker-compose up
-✓ All critical endpoints have test coverage > 80%
-✓ API documentation is complete
+P1-01: [TOOL SELECTION] Item Search Likely Uses Wrong Tool
+────────────────────────────────────────────────────────────────────────────────
+USER QUESTION: "which restaurant has bhel?" or "I want pizza"
 
-PERFORMANCE REQUIREMENTS:
-✓ API response time < 500ms (95th percentile)
-✓ Application handles 100+ concurrent users
-✓ Docker images < 500MB each
-✓ Container startup time < 30 seconds
+EXPECTED: Agent calls search_restaurants_by_item("bhel")
+PREDICTED: Agent may call search_restaurants_by_cuisine() instead
 
-SECURITY REQUIREMENTS:
-✓ RBAC properly enforced
-✓ Rate limiting active
-✓ No critical security vulnerabilities
-✓ HTTPS enforced in production
-✓ Secrets properly managed
+REASON:
+Despite "PRIORITY TOOL" marking (Line 639), the AI model often defaults to
+cuisine search because it's listed earlier in function declarations.
 
-QUALITY REQUIREMENTS:
-✓ No critical bugs in production
-✓ Error rate < 1%
-✓ Uptime > 99.5%
-✓ Comprehensive documentation
-✓ Clean, maintainable code
+CODE EVIDENCE:
+- search_restaurants_by_item exists (Line 860-930) ✓
+- System instruction mentions priority (Line 639-651) ✓  
+- BUT: No forced pre-processing like Line 1068 for restaurant lists
+
+IMPACT: Users cannot find specific food items they're craving
+
+CONFIDENCE: 80% - Common AI behavior pattern
+
+TEST WHEN FIXED:
+Message: "which restaurant has bhel?"
+Expected: search_restaurants_by_item called, NOT search_by_cuisine
+
+────────────────────────────────────────────────────────────────────────────────
+P1-02: [RESPONSE TRUNCATION] Restaurant Lists May Show Partial Results
+────────────────────────────────────────────────────────────────────────────────
+USER QUESTION: "list all restaurants"
+
+EXPECTED: All 7-10 restaurants displayed
+PREDICTED: May show only 3-5 restaurants despite complete data from function
+
+REASON:
+AI models tend to summarize long lists even with explicit "VERBATIM" instructions.
+The bypass logic (Line 1374-1390) should prevent this, but edge cases exist.
+
+CODE EVIDENCE:
+- get_all_restaurants returns complete formatted list (Line 765-804) ✓
+- Bypass logic exists (Line 1374-1390) ✓
+- System instruction warns against truncation (Line 707-733) ✓
+- BUT: Bypass may not trigger in all code paths
+
+IMPACT: Users miss restaurant options, can't see full choices
+
+CONFIDENCE: 60% - Mitigated by bypass logic but still possible
+
+TEST WHEN FIXED:
+Message: "list all restaurants"
+Count restaurants in response, verify matches database count
+
+────────────────────────────────────────────────────────────────────────────────
+P1-03: [CONTEXT RETENTION] Likely Loses Conversation Context
+────────────────────────────────────────────────────────────────────────────────
+USER CONVERSATION:
+User: "tell me about Thepla House"
+Agent: [shows info]
+User: "show me the menu"
+
+EXPECTED: Remembers "Thepla House" and shows its menu
+PREDICTED: Asks "Which restaurant?" - loses context
+
+REASON:
+While chat history IS passed (Line 1136), the system instruction doesn't
+give AI explicit strategies for context resolution.
+
+CODE EVIDENCE:
+- History maintained correctly (Line 1119-1130) ✓
+- Passed to model (Line 1136) ✓
+- System instruction mentions context (Line 607-630) ✓
+- BUT: No explicit "if vague reference, check last N messages" logic
+
+IMPACT: Repetitive questions, frustrating UX, unnatural conversation
+
+CONFIDENCE: 70% - Common AI limitation without explicit guidance
+
+TEST WHEN FIXED:
+Two-message sequence testing context memory
+
+────────────────────────────────────────────────────────────────────────────────
+P1-04: [ORDER CONFIRMATION] Orders May Be Placed Without Confirmation
+────────────────────────────────────────────────────────────────────────────────
+USER QUESTION: "order a Masala Thepla from Thepla House"
+
+EXPECTED: Shows summary, asks "Confirm?", waits for yes
+PREDICTED: May place order immediately without confirmation
+
+REASON:
+No code-enforced confirmation gate. System instruction says "Confirm Before
+Acting" but this is a guideline, not enforced logic.
+
+CODE EVIDENCE:
+- place_order() callable directly by AI (Line 933-1042)
+- pending_orders dict exists but not used for confirmation (Line 61)
+- System instruction Line 619 says confirm, but not enforced
+- No explicit confirmation workflow in code
+
+IMPACT: Accidental orders, user trust issues, potential complaints
+
+CONFIDENCE: 65% - Depends on AI following instructions
+
+TEST WHEN FIXED:
+Message: "order masala thepla from Thepla House"
+Verify: Response asks for confirmation, doesn't show "Order placed"
+
+────────────────────────────────────────────────────────────────────────────────
+P1-05: [AUTHENTICATION] Token May Not Persist Across Messages
+────────────────────────────────────────────────────────────────────────────────
+SCENARIO: User logs in, then asks "show my order history"
+
+EXPECTED: Agent uses stored token, shows orders
+PREDICTED: May ask to login again because token not stored in session
+
+REASON:
+Token extracted from header (Line 1198-1211) but not stored in chat_sessions
+for reuse. Each request requires re-sending token.
+
+CODE EVIDENCE:
+- Token extraction works (Line 1198-1211) ✓
+- Logging confirms extraction (Line 1214) ✓
+- BUT: Not stored in chat_sessions[user_id] for persistence
+- Each protected function call needs token from request headers
+
+IMPACT: "Already logged in" users asked to login again
+
+CONFIDENCE: 80% - Clear code gap
+
+TEST WHEN FIXED:
+Login, then send multiple messages requiring auth
+Verify: Token persists, no re-login requests
+
+────────────────────────────────────────────────────────────────────────────────
+P1-06: [CUISINE FILTER] May Return All Restaurants Instead of Filtered
+────────────────────────────────────────────────────────────────────────────────
+USER QUESTION: "show me Gujarati restaurants"
+
+EXPECTED: Only Gujarati restaurants
+PREDICTED: May show ALL restaurants or say "filtering not available"
+
+REASON:
+This was an OLD BUG that appears fixed in code, but needs verification.
+Backend supports filtering (main.py Line 136-159), function exists (Line 826-857).
+
+CODE EVIDENCE:
+- Backend endpoint supports ?cuisine= (main.py Line 136-159) ✓
+- search_restaurants_by_cuisine function exists (Line 826-857) ✓
+- Uses cuisine parameter correctly (Line 849) ✓
+- Should work IF AI calls correct function
+
+IMPACT: Search broken, users can't filter by cuisine
+
+CONFIDENCE: 30% - Likely fixed, but was a reported bug
+
+TEST WHEN FIXED:
+Message: "show Gujarati restaurants"
+Verify: Only Gujarati restaurants shown, count matches expectations
 
 ================================================================================
-TEAM & RESOURCES
+🟡 PRIORITY 2 - IMPORTANT ISSUES (UX & Polish)
 ================================================================================
 
-REQUIRED SKILLS:
-- Backend: Python, FastAPI, MongoDB, Beanie
-- AI/ML: Google Gemini API, function calling, prompt engineering
-- Frontend: React, Tailwind CSS (if doing TASK-009)
-- DevOps: Docker, Docker Compose, Linux basics
-- Testing: Pytest, integration testing
+P2-01: [FORMATTING] Inconsistent Visual Structure
+────────────────────────────────────────────────────────────────────────────────
+ISSUE: Restaurant lists may lack consistent formatting, emojis, bullets
 
-RECOMMENDED TEAM SIZE:
-- 2-3 full-time developers
-- OR 1 senior full-stack developer for 6 weeks
+EVIDENCE: get_all_restaurants has good formatting (Line 765-804) but other
+responses generated by AI may be inconsistent
 
-TOOLS & SERVICES NEEDED:
-- Docker Desktop (free)
-- Google Gemini API key (free tier sufficient)
-- MongoDB Atlas (free tier) OR local MongoDB
-- Redis (Docker image)
-- Code editor (VS Code recommended)
-- Postman (for API testing)
+IMPACT: Harder to scan, less professional appearance
+
+────────────────────────────────────────────────────────────────────────────────
+P2-02: [ERROR MESSAGES] Technical Errors May Leak to Users
+────────────────────────────────────────────────────────────────────────────────
+ISSUE: When backend fails, users may see "500 Error" or "404" instead of
+friendly messages like "🔌 Can't connect right now"
+
+EVIDENCE: Some try-except blocks exist but not comprehensive coverage
+
+IMPACT: Scary, unprofessional, users don't know what to do
+
+────────────────────────────────────────────────────────────────────────────────
+P2-03: [PERSONA] Tone May Be Too Formal
+────────────────────────────────────────────────────────────────────────────────
+ISSUE: System instruction defines friendly persona but AI may still be formal
+
+EXAMPLE: "Your request has been processed" vs "🎉 Done! Yay!"
+
+IMPACT: Less engaging, robotic feel
+
+────────────────────────────────────────────────────────────────────────────────
+P2-04: [PROACTIVITY] Missing Next Step Suggestions
+────────────────────────────────────────────────────────────────────────────────
+ISSUE: After showing menu, should suggest "Want to order?"
+After placing order, should suggest "Leave a review?"
+
+EVIDENCE: System instruction mentions this but inconsistent execution
+
+IMPACT: Users don't know what to do next, conversation stalls
+
+────────────────────────────────────────────────────────────────────────────────
+P2-05: [MENU DISPLAY] Menu Items May Be Empty or Incomplete
+────────────────────────────────────────────────────────────────────────────────
+ISSUE: Restaurant info shows but menu section blank
+
+REASON: Field name mismatch - is it 'item_name' or 'name'?
+
+EVIDENCE: Code at Line 831 tries both: item.get('item_name', item.get('name'))
+
+IMPACT: Users can't see what's available, can't make decisions
+
+────────────────────────────────────────────────────────────────────────────────
+P2-06: [GREETING] No Auto-Welcome for New Users
+────────────────────────────────────────────────────────────────────────────────
+ISSUE: V4.0 has personalized greeting for authenticated users (Line 1221-1288)
+but nothing for first-time or guest users
+
+IMPACT: Users don't know where to start, missed engagement opportunity
+
+────────────────────────────────────────────────────────────────────────────────
+P2-07: [AMBIGUOUS REQUESTS] Poor Clarification Questions
+────────────────────────────────────────────────────────────────────────────────
+ISSUE: User says "I want food" and agent says "can't help" instead of
+asking "What type of food? Pizza? Gujarati? Italian?"
+
+IMPACT: Dead-end conversations, user frustration
+
+────────────────────────────────────────────────────────────────────────────────
+P2-08: [REVIEW VALIDATION] No Pre-Validation Before Submission
+────────────────────────────────────────────────────────────────────────────────
+ISSUE: User says "rate 10 stars" and agent tries to submit, gets validation
+error from backend. Should validate client-side first.
+
+IMPACT: Awkward error handling, extra round-trip
 
 ================================================================================
-RISK ASSESSMENT
+🟢 PRIORITY 3 - ENHANCEMENT OPPORTUNITIES
 ================================================================================
 
-HIGH RISK:
-- Gemini API quota limits (Mitigation: Monitor usage, implement caching)
-- Docker learning curve (Mitigation: Provide good documentation)
-- MongoDB schema changes (Mitigation: Use migrations, test thoroughly)
+P3-01: [MISSING FEATURE] No Area/Location Filtering
+USER QUESTION: "what's in Navrangpura?"
+CURRENT: Not supported (no tool or backend endpoint)
+IMPACT: Can't search by location
 
-MEDIUM RISK:
-- Timeline slippage (Mitigation: Prioritize HIGH tasks, defer LOW tasks)
-- Integration issues (Mitigation: Test early and often)
-- Performance bottlenecks (Mitigation: Load test early)
+P3-02: [MISSING FEATURE] No Multi-Turn Order Building
+DESIRED: Add items one-by-one: "order from X" → "what would you like?" → "pizza" → "anything else?"
+CURRENT: Must specify all items at once
+IMPACT: Less natural conversation
 
-LOW RISK:
-- Scope creep (Mitigation: Strict prioritization, defer stretch goals)
+P3-03: [MISSING FEATURE] No Logout Command
+ISSUE: Can login but can't logout via chat
+NOTE: This is typically frontend responsibility, may not be needed
+
+P3-04: [MISSING FEATURE] No Price Range Filtering
+USER QUESTION: "show cheap restaurants"
+CURRENT: Not supported
+IMPACT: Can't filter by budget
+
+P3-05: [ENHANCEMENT] Basic Recommendation Algorithm
+USER QUESTION: "what should I eat?" 
+CURRENT: V4.0 has personalized greeting but no explicit recommendation function
+DESIRED: Analyze history, consider ratings, suggest 2-3 options
+IMPACT: More engaging, higher satisfaction
 
 ================================================================================
-POST-V4.0 FUTURE ENHANCEMENTS (V5.0 IDEAS)
+POSITIVE ASPECTS (WHAT'S WORKING WELL)
 ================================================================================
 
-- Real-time order tracking with WebSockets
-- Restaurant owner portal
-- Mobile app (React Native)
-- Payment gateway integration (Stripe/Razorpay)
-- Advanced analytics and ML recommendations
-- Multi-language support
-- Push notifications
-- Social features (share orders, follow friends)
-- Loyalty program and rewards
-- Image upload for reviews
+✅ EXCELLENT: V4.0 Architecture & Features
+- Comprehensive function declarations
+- Multi-item orders
+- Reviews and ratings
+- Admin dashboard
+- Personalized greetings
+- Proactive review prompts
+
+✅ EXCELLENT: Backend API Design
+- Well-structured FastAPI
+- Proper validation with Pydantic
+- MongoDB integration
+- Rate limiting and security (HIGH-002, HIGH-003 fixes)
+- Health check endpoint
+
+✅ GOOD: System Instructions
+- Detailed AI guidance (540 lines)
+- Persona definition
+- Tool usage rules
+- Bypass logic for critical functions
+- Multiple enhancement phases documented
+
+✅ GOOD: Error Handling Foundation
+- Try-except blocks in place
+- Some friendly error messages
+- Graceful degradation logic
+
+✅ GOOD: Code Organization
+- Clear separation of concerns
+- Comprehensive comments
+- Version tracking (V4.0)
+- Security annotations (HIGH-002, MEDIUM-005)
+
+================================================================================
+TESTING METHODOLOGY & VALIDATION
+================================================================================
+
+COMPREHENSIVE ANALYSIS PERFORMED:
+✅ Deep code review of agent.py (1,555 lines)
+✅ Backend API review of main.py (630+ lines)
+✅ System instruction analysis (540+ lines)
+✅ Function declaration mapping (12 tools)
+✅ Error handling pattern review
+✅ Authentication flow validation
+✅ Conversation context management check
+✅ User scenario simulation (50+ questions)
+
+TESTING BLOCKED BY:
+❌ P0-01: Invalid Google API Key prevents live testing
+
+TESTING READY WHEN P0-01 FIXED:
+📋 manual_test_critical.py - Step-by-step critical tests
+📋 test_agent_api.py - Comprehensive automated testing
+📋 50+ user questions from requirements
+📋 All edge cases and error scenarios
+
+CONFIDENCE LEVELS:
+- P0-01: 100% (Verified via API test)
+- P1 Issues: 60-80% (Strong code evidence, common patterns)
+- P2 Issues: 50-70% (Reasonable predictions)
+- P3 Issues: 100% (Clear code gaps, documented features)
+
+================================================================================
+RECOMMENDATIONS & FIX PRIORITY
+================================================================================
+
+IMMEDIATE ACTION REQUIRED:
+1. 🔴 FIX P0-01: Get valid Google Gemini API key (5-10 min)
+2. ✅ RESTART: Flask agent after .env update
+3. 🧪 TEST: Run manual_test_critical.py to verify basic functionality
+4. 📋 VALIDATE: Run comprehensive test_agent_api.py
+5. 📊 REVIEW: Update this file with actual test results
+
+AFTER P0-01 IS FIXED, FIX ORDER:
+1. P1-01: Item search tool selection (2-3 hours)
+2. P1-04: Order confirmation workflow (3-4 hours)
+3. P1-03: Context retention enhancement (2-3 hours)
+4. P1-02: Response truncation verification (1-2 hours)
+5. P1-05: Token persistence (1-2 hours)
+6. P1-06: Cuisine filter verification (1 hour test)
+7. P2 Issues: Formatting & UX polish (4-6 hours)
+8. P3 Features: Nice-to-have enhancements (10-15 hours)
+
+TOTAL ESTIMATED EFFORT:
+- Fix P0: 10 minutes
+- Fix P1 (all 6): 10-15 hours (2 days)
+- Fix P2 (all 8): 4-6 hours (1 day)
+- Add P3 (all 5): 10-15 hours (2-3 days)
+
+DEPLOYMENT READINESS TIMELINE:
+- Current: 0% ready (blocked by P0)
+- After P0 fix: 60% ready (basic functionality works)
+- After P0+P1: 85% ready (core features solid)
+- After P0+P1+P2: 95% ready (polished and professional)
+- After all fixes: 100% ready (feature-complete)
 
 ================================================================================
 CONCLUSION
 ================================================================================
 
-Version 4.0 represents a major evolution of FoodieExpress from a technically
-stable platform to a feature-rich, market-competitive product. The focus on
-user engagement (reviews), business intelligence (admin dashboard), AI 
-personalization, and operational excellence (Docker) positions the platform
-for growth and scale.
+CURRENT STATUS: 🔴 BLOCKED - Configuration Issue
 
-The roadmap is ambitious but achievable within 4-6 weeks with a dedicated team.
-Prioritization is key - focus on HIGH priority tasks first, and treat MEDIUM/LOW
-tasks as enhancements that can be deferred if needed.
+ROOT CAUSE: Google Gemini API key is invalid or missing
 
-Good luck with V4.0! 🚀
+AGENT QUALITY (when API works):
+- Architecture: ⭐⭐⭐⭐⭐ (5/5) - Excellent design
+- Feature Set: ⭐⭐⭐⭐⭐ (5/5) - Comprehensive
+- Code Quality: ⭐⭐⭐⭐☆ (4/5) - Well-structured
+- UX Design: ⭐⭐⭐☆☆ (3/5) - Needs polish
+- Error Handling: ⭐⭐⭐☆☆ (3/5) - Basic coverage
+
+OVERALL ASSESSMENT:
+This is a WELL-DESIGNED agent with EXCELLENT infrastructure and features.
+The V4.0 enhancements (personalization, admin dashboard, reviews) are
+impressive. The code is well-organized and properly commented.
+
+PRIMARY ISSUE: Configuration problem (API key) is blocking all testing.
+
+SECONDARY ISSUES: Predicted issues based on common AI behavior patterns
+and code analysis. These are high-probability but need verification.
+
+RECOMMENDATION:
+1. Fix API key IMMEDIATELY (10 minutes)
+2. Run comprehensive tests (1 hour)  
+3. Address confirmed P1 issues (2 days)
+4. Polish UX with P2 fixes (1 day)
+5. Deploy and gather feedback
+6. Iterate on P3 enhancements
+
+WITH THESE FIXES: This will be a production-ready, professional AI chatbot
+that provides excellent user experience and comprehensive food ordering
+functionality.
 
 ================================================================================
-END OF DOCUMENT
+FILES GENERATED FOR TESTING
+================================================================================
+
+1. AGENT_TEST_REPORT.txt - Detailed test matrix with expected behaviors
+2. problems.txt (this file) - Comprehensive problem analysis
+3. test_agent_api.py - Automated testing script  
+4. manual_test_critical.py - Step-by-step manual testing
+
+USAGE:
+After fixing P0-01 (API key):
+1. Run: python manual_test_critical.py (interactive testing)
+2. Run: python test_agent_api.py (automated testing)
+3. Review: problems.txt will be updated with actual results
+4. Compare: Expected vs actual behaviors in AGENT_TEST_REPORT.txt
+
+================================================================================
+GUIDING PRINCIPLES EVALUATION
+================================================================================
+
+Based on code review, predicted adherence to guiding principles:
+
+✅ Be Clear & Concise: GOOD
+- Function responses use bullets and structure
+- get_all_restaurants has excellent formatting
+
+⚠️  Be Proactive & Helpful: MODERATE
+- System instruction mentions this
+- Inconsistent execution predicted
+
+⚠️  Maintain Context: MODERATE  
+- History passed but AI may not use it effectively
+- Needs explicit context resolution strategies
+
+✅ Be Personable & Engaging: GOOD
+- V4.0 personalized greetings
+- Emoji usage in system instruction
+- Friendly tone defined
+
+⚠️  Confirm Before Acting: WEAK
+- System instruction says to confirm
+- No code enforcement of confirmation workflow
+
+⚠️  Handle Failure Gracefully: MODERATE
+- Some try-except blocks
+- Not comprehensive coverage
+- Some technical errors may leak
+
+OVERALL: 3.5/6 principles well-implemented
+NEEDS IMPROVEMENT: Context, Confirmation, Error Handling
+
+================================================================================
+END OF REPORT
+================================================================================
+
+Generated: October 15, 2025
+Agent Version: V4.0
+Status: BLOCKED BY API KEY - Comprehensive Analysis Complete
+Next Step: Fix P0-01, then run live tests to validate predictions
+
+For updates after API key fix, re-run test scripts and review actual results.
+
 ================================================================================

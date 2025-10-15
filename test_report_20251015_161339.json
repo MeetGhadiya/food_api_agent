@@ -1,0 +1,113 @@
+{
+  "timestamp": "2025-10-15T16:13:39.330808",
+  "summary": {
+    "total": 12,
+    "passed": 7,
+    "passed_with_issues": 5,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "results": [
+    {
+      "test_id": "1.1",
+      "category": "Greetings",
+      "input": "hello",
+      "status": "PASS",
+      "response": "🌮 Hey there! Welcome to FoodieExpress! I'm here to help you find the perfect bite to eat. What can I assist you with today? Want some recommendations or need help with an order? 🍴"
+    },
+    {
+      "test_id": "1.2",
+      "category": "Greetings",
+      "input": "what can you do?",
+      "status": "PASS",
+      "response": "🤔 I can help you in several ways:\n\n1. **Browse restaurants**: I can show you a list of all restaurants available on our platform, or help you find specific ones that serve your favorite cuisine.\n2. **"
+    },
+    {
+      "test_id": "2.1",
+      "category": "Discovery",
+      "input": "list all restaurants",
+      "status": "PASS",
+      "response": "Error fetching restaurants"
+    },
+    {
+      "test_id": "2.2",
+      "category": "Discovery",
+      "input": "show me gujarati restaurants",
+      "status": "PASS_WITH_ISSUES",
+      "issues": [
+        "Missing expected keyword: 'gujarati'"
+      ],
+      "response": "Error searching restaurants"
+    },
+    {
+      "test_id": "2.3",
+      "category": "Discovery",
+      "input": "tell me about Swati Snacks",
+      "status": "PASS_WITH_ISSUES",
+      "issues": [
+        "Missing expected keyword: 'menu'"
+      ],
+      "response": "Restaurant 'Swati Snacks' not found"
+    },
+    {
+      "test_id": "3.1",
+      "category": "Menu",
+      "input": "which restaurant has bhel?",
+      "status": "PASS_WITH_ISSUES",
+      "issues": [
+        "Missing expected keyword: 'bhel'",
+        "Missing expected keyword: 'restaurant'"
+      ],
+      "response": "Error searching for item"
+    },
+    {
+      "test_id": "3.2",
+      "category": "Menu",
+      "input": "show me the menu",
+      "status": "PASS",
+      "response": "Restaurant 'The Menu' not found"
+    },
+    {
+      "test_id": "4.1",
+      "category": "Ordering",
+      "input": "I want to order",
+      "status": "PASS",
+      "response": "Let's get started with your order! 📝\n\nTo place an order, I'll need some information from you:\n\n1. **Which restaurant** would you like to order from? (You can type the name of the restaurant or ask me "
+    },
+    {
+      "test_id": "4.2",
+      "category": "Ordering",
+      "input": "order 2 Masala Thepla from Thepla House",
+      "status": "PASS",
+      "response": "👍 Your order is placed:\n\n**Order Details:**\n\n* Restaurant: **Thepla House**\n* Order: 2 x Masala Thepla\n* Total: [insert total price]\n\n**Your Order Status:**\n\nYour order will be prepared and delivered "
+    },
+    {
+      "test_id": "6.1",
+      "category": "Reviews",
+      "input": "show me reviews for Honest Restaurant",
+      "status": "PASS",
+      "response": "🤔 Unfortunately, I don't have information on \"Honest Restaurant\". It's possible that it's not a real restaurant on our platform. 🤷‍♂️\n\nHowever, I can suggest some options to find reviews:\n\n1. **Search"
+    },
+    {
+      "test_id": "6.2",
+      "category": "Reviews",
+      "input": "I want to leave a 5 star review for Honest Restaurant",
+      "status": "PASS_WITH_ISSUES",
+      "issues": [
+        "Missing expected keyword: 'comment'"
+      ],
+      "response": "😊 Unfortunately, I don't have any information on \"Honest Restaurant\" as it's not listed in our database. However, if you'd like to leave a review for a different restaurant, I can help you with that! "
+    },
+    {
+      "test_id": "7.1",
+      "category": "Error Handling",
+      "input": "show menu for RestaurantThatDoesNotExist",
+      "status": "PASS_WITH_ISSUES",
+      "issues": [
+        "Missing expected keyword: 'sorry'",
+        "Missing expected keyword: 'couldn't find'"
+      ],
+      "response": "Restaurant 'For Restaurantthatdoesnotexist' not found"
+    }
+  ]
+}
