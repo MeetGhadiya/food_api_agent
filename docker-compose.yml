@@ -72,10 +72,10 @@ services:
       - "8000:8000"
     environment:
       # MongoDB Connection (from .env or direct)
-      - MONGODB_URI=${MONGODB_URI:-mongodb+srv://user:pass@cluster.mongodb.net/foodie_db}
+      - MONGODB_URI=${MONGODB_URI:-mongodb+srv://USERNAME:PASSWORD@cluster.mongodb.net/foodie_db}
       
       # JWT Secret Key
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - SECRET_KEY=${SECRET_KEY:-CHANGE_THIS_IN_PRODUCTION}
       
       # CORS Settings
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:3000,http://localhost:5000}

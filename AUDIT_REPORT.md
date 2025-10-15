@@ -69,10 +69,10 @@ git log --all --full-history -- "*/.env"
 
 | Secret Type | Value | Location | First Commit | Exposure Period |
 |------------|-------|----------|--------------|-----------------|
-| Google API Key #1 | `KEY_REMOVED_FOR_SECURITY` | `food_api_agent/.env` | `24bdd5a` | Oct 10-14 (4 days) |
-| Google API Key #2 | `KEY_REMOVED_FOR_SECURITY` | `food_api_agent/.env` | `8b8153c` | Unknown duration |
-| MongoDB Password | `REDACTED_PASSWORD` | `food_api/migrate_restaurants.py` | Multiple | Since project start |
-| Test Password | `SECURE_PASSWORD_HERE` | `V4_UPGRADE_REPORT.txt` | Documentation | N/A (example) |
+| Google API Key #1 | `[REDACTED]` | `food_api_agent/.env` | `24bdd5a` | Oct 10-14 (4 days) |
+| Google API Key #2 | `[REDACTED]` | `food_api_agent/.env` | `8b8153c` | Unknown duration |
+| MongoDB Password | `[REDACTED]` | `food_api/migrate_restaurants.py` | Multiple | Since project start |
+| Test Password | `[REDACTED]` | `V4_UPGRADE_REPORT.txt` | Documentation | N/A (example) |
 
 ---
 
@@ -80,7 +80,7 @@ git log --all --full-history -- "*/.env"
 
 ### 2.1 Google API Key Exposures
 
-#### API Key #1: KEY_REMOVED_FOR_SECURITY
+#### API Key #1: [REDACTED_KEY_1]
 - **Risk Level:** 🔴 CRITICAL
 - **Service:** Google Gemini AI API
 - **Exposure:** Public GitHub repository
@@ -92,7 +92,7 @@ git log --all --full-history -- "*/.env"
   - Rate limit exhaustion
   - Service disruption
 
-#### API Key #2: KEY_REMOVED_FOR_SECURITY
+#### API Key #2: [REDACTED_KEY_2]
 - **Risk Level:** 🔴 CRITICAL
 - **Service:** Google Gemini AI API
 - **Exposure:** Public GitHub repository
@@ -100,7 +100,7 @@ git log --all --full-history -- "*/.env"
 - **Duration:** Unknown (potentially weeks)
 - **Impact:** Same as Key #1
 
-#### API Key #3: KEY_REMOVED_FOR_SECURITY
+#### API Key #3: [REDACTED_CURRENT_KEY]
 - **Risk Level:** ✅ SECURE
 - **Status:** Never committed to Git
 - **Location:** Local `.env` files only
@@ -113,14 +113,14 @@ git log --all --full-history -- "*/.env"
 #### MongoDB Atlas Connection String
 ```python
 # EXPOSED CODE (before remediation):
-MONGODB_URL = "mongodb+srv://USERNAME:PASSWORD@foodapicluster.6z9sntm.mongodb.net/..."
+MONGODB_URL = "mongodb+srv://foodapi_user:[REDACTED]@foodapicluster.6z9sntm.mongodb.net/..."
 ```
 
 - **Risk Level:** 🔴 CRITICAL
 - **Service:** MongoDB Atlas
 - **Credentials Exposed:**
   - Username: `foodapi_user`
-  - Password: `REDACTED_PASSWORD`
+  - Password: `[REDACTED]`
   - Cluster: `foodapicluster.6z9sntm.mongodb.net`
 - **Files Affected:**
   - `food_api/migrate_restaurants.py` (hardcoded)
@@ -141,7 +141,7 @@ MONGODB_URL = "mongodb+srv://USERNAME:PASSWORD@foodapicluster.6z9sntm.mongodb.ne
 // EXPOSED CODE:
 {
   "username": "admin",
-  "password": "SECURE_PASSWORD_HERE"
+  "password": "[REDACTED]"
 }
 ```
 
@@ -155,7 +155,7 @@ MONGODB_URL = "mongodb+srv://USERNAME:PASSWORD@foodapicluster.6z9sntm.mongodb.ne
 
 ###***REMOVED***
 ```
-Username/Password: demo_user/REDACTED_PASSWORD
+Username/Password: [REDACTED]/[REDACTED]
 ```
 
 - **Risk Level:** 🟡 MEDIUM
@@ -211,10 +211,10 @@ git push origin MG
 
 **Replacement Pattern:**
 ```
-KEY_REMOVED_FOR_SECURITY ==> KEY_REMOVED_FOR_SECURITY
+[REDACTED_KEY_1] ==> KEY_REMOVED_FOR_SECURITY
 ```
 
-**Execution:**
+**Execution:****
 ```bash
 pip install git-filter-repo
 git filter-repo --replace-text secret-replacements.txt --force
@@ -231,15 +231,15 @@ git filter-repo --replace-text secret-replacements.txt --force
 #### Round 2: MongoDB Credentials Removal
 **Additional Patterns:**
 ```
-mongodb+srv://USERNAME:PASSWORD@ ==> mongodb://localhost:27017/
-USERNAME:PASSWORD@ ==> YOUR_USERNAME:YOUR_PASSWORD@
-PASSWORD = "REDACTED_PASSWORD" ==> PASSWORD = "demo_password"
+mongodb+srv://foodapi_user:[REDACTED]@ ==> mongodb://localhost:27017/
+foodapi_user:[REDACTED]@ ==> YOUR_USERNAME:YOUR_PASSWORD@
+PASSWORD = "[REDACTED]" ==> PASSWORD = "demo_password"
 ```
 
 **Code Changes:**
 ```python
 # BEFORE:
-MONGODB_URL = "mongodb+srv://USERNAME:PASSWORD@..."
+MONGODB_URL = "mongodb+srv://foodapi_user:[REDACTED]@..."
 
 # AFTER:
 import os
@@ -258,7 +258,7 @@ MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 
 **Additional Pattern:**
 ```
-KEY_REMOVED_FOR_SECURITY ==> KEY_REMOVED_FOR_SECURITY
+[REDACTED_KEY_2] ==> KEY_REMOVED_FOR_SECURITY
 ```
 
 **Results:**
@@ -271,9 +271,9 @@ KEY_REMOVED_FOR_SECURITY ==> KEY_REMOVED_FOR_SECURITY
 #### Round 4: Test Password Sanitization
 **Additional Patterns:**
 ```
-SECURE_PASSWORD_HERE ==> YOUR_SECURE_PASSWORD_HERE
-demo_user / REDACTED_PASSWORD ==> demo_user / demo_password
-demo_user/REDACTED_PASSWORD ==> demo_user/demo_password
+[REDACTED] ==> YOUR_SECURE_PASSWORD_HERE
+[REDACTED] / [REDACTED] ==> demo_user / demo_password
+[REDACTED]/[REDACTED] ==> demo_user/demo_password
 ```
 
 **Results:**
@@ -312,22 +312,22 @@ git push origin --force --all
 #### API Key Verification
 ```bash
 # Check for old keys
-git log --all -S "KEY_REMOVED_FOR_SECURITY"
+git log --all -S "[REDACTED_KEY_1]"
 # Result: ✅ No commits found
 
-git log --all -S "KEY_REMOVED_FOR_SECURITY"
+git log --all -S "[REDACTED_KEY_2]"
 # Result: ✅ No commits found
 
-git log --all -S "KEY_REMOVED_FOR_SECURITY"
+git log --all -S "[REDACTED_CURRENT_KEY]"
 # Result: ✅ No commits found (correct - never committed)
 ```
 
 #### MongoDB Credential Verification
 ```bash
-git log --all -S "foodapi_user:REDACTED_PASSWORD"
+git log --all -S "foodapi_user:[REDACTED]"
 # Result: ✅ Only binary .pyc files (expected, non-exploitable)
 
-git grep "REDACTED_PASSWORD" --no-index "*.py" "*.md" "*.txt"
+git grep "[REDACTED]" --no-index "*.py" "*.md" "*.txt"
 # Result: ✅ No matches in text files
 ```
 
@@ -536,8 +536,8 @@ if not API_KEY:
 **URL:** https://console.cloud.google.com/apis/credentials
 
 **Keys to Revoke:**
-1. `KEY_REMOVED_FOR_SECURITY` (exposed Oct 10-14)
-2. `KEY_REMOVED_FOR_SECURITY` (exposed duration unknown)
+1. `[REDACTED_KEY_1]` (exposed Oct 10-14)
+2. `[REDACTED_KEY_2]` (exposed duration unknown)
 
 **Action Steps:**
 1. Log in to Google Cloud Console
@@ -556,7 +556,7 @@ if not API_KEY:
 
 **Current Credentials:**
 - Username: `foodapi_user`
-- Password: `REDACTED_PASSWORD` (EXPOSED - must change)
+- Password: `[REDACTED]` (EXPOSED - must change)
 
 **Action Steps:**
 1. Log in to MongoDB Atlas
@@ -836,19 +836,19 @@ The FoodieExpress repository is now:
 ### Git Filter-Repo Patterns
 ```
 # API Keys
-KEY_REMOVED_FOR_SECURITY==>KEY_REMOVED_FOR_SECURITY
-KEY_REMOVED_FOR_SECURITY==>KEY_REMOVED_FOR_SECURITY
+[REDACTED_KEY_1]==>KEY_REMOVED_FOR_SECURITY
+[REDACTED_KEY_2]==>KEY_REMOVED_FOR_SECURITY
 
 ***REMOVED***
-mongodb+srv://USERNAME:PASSWORD@==>mongodb://localhost:27017/
-USERNAME:PASSWORD@==>YOUR_USERNAME:YOUR_PASSWORD@
+mongodb+srv://foodapi_user:[REDACTED]@==>mongodb://localhost:27017/
+foodapi_user:[REDACTED]@==>YOUR_USERNAME:YOUR_PASSWORD@
 
 # Test Passwords
-SECURE_PASSWORD_HERE==>YOUR_SECURE_PASSWORD_HERE
-demo_user / REDACTED_PASSWORD==>demo_user / demo_password
-demo_user"; password="REDACTED_PASSWORD"==>demo_user"; password="demo_password"
-demo_user/REDACTED_PASSWORD==>demo_user/demo_password
-PASSWORD = "REDACTED_PASSWORD"==>PASSWORD = "demo_password"
+[REDACTED]==>YOUR_SECURE_PASSWORD_HERE
+[REDACTED] / [REDACTED]==>demo_user / demo_password
+[REDACTED]"; password="[REDACTED]"==>demo_user"; password="demo_password"
+[REDACTED]/[REDACTED]==>demo_user/demo_password
+PASSWORD = "[REDACTED]"==>PASSWORD = "demo_password"
 ```
 
 ---

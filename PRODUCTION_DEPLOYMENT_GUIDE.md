@@ -33,11 +33,11 @@ Your FoodieExpress V4.0 application has successfully passed comprehensive securi
    ```
 
 2. **Revoke These Exposed Keys:**
-   - `KEY_REMOVED_FOR_SECURITY` ❌ DELETE THIS
-   - `KEY_REMOVED_FOR_SECURITY` ❌ DELETE THIS
+   - `[REDACTED_KEY_1]` ❌ DELETE THIS
+   - `[REDACTED_KEY_2]` ❌ DELETE THIS
 
 3. **Keep Your Current Key:**
-   - `KEY_REMOVED_FOR_SECURITY` ✅ SAFE (never committed)
+   - Your current production API key ✅ SAFE (never committed)
 
 4. **How to Delete:**
    - Find each key in the credentials list
@@ -47,7 +47,7 @@ Your FoodieExpress V4.0 application has successfully passed comprehensive securi
 **Verification:**
 ```powershell
 # After deletion, test your current key:
-curl -H "Content-Type: application/json" -d '{"contents":[{"parts":[{"text":"test"}]}]}' "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=KEY_REMOVED_FOR_SECURITY"
+curl -H "Content-Type: application/json" -d '{"contents":[{"parts":[{"text":"test"}]}]}' "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=YOUR_API_KEY_HERE"
 ```
 
 Expected: Valid response (not "API key not valid")
@@ -59,7 +59,7 @@ Expected: Valid response (not "API key not valid")
 
 ### ⚠️ ACTION 2: ROTATE MONGODB PASSWORD (Priority: URGENT)
 
-**Why:** MongoDB password `REDACTED_PASSWORD` was exposed in migration scripts and documentation.
+**Why:** MongoDB password `[REDACTED]` was exposed in migration scripts and documentation.
 
 **Steps:**
 
@@ -151,7 +151,7 @@ notepad .env
 
 ```env
 # Your SAFE API key (the one that was never exposed)
-GOOGLE_API_KEY=KEY_REMOVED_FOR_SECURITY
+GOOGLE_API_KEY=YOUR_API_KEY_HERE
 
 # Backend URL
 FASTAPI_BASE_URL=http://localhost:8000
@@ -170,9 +170,9 @@ AGENT_PORT=5000
 Before proceeding to deployment, verify ALL items:
 
 ### Environment Setup
-- [ ] Old Google API key #1 (`AIzaSyBUxDTglWba...`) deleted from Google Cloud
-- [ ] Old Google API key #2 (`AIzaSyAOTDdZQBHr...`) deleted from Google Cloud
-- [ ] Current API key (`AIzaSyBQTelGXVPRY...`) tested and working
+- [ ] Old Google API key #1 (`[REDACTED_KEY_1]`) deleted from Google Cloud
+- [ ] Old Google API key #2 (`[REDACTED_KEY_2]`) deleted from Google Cloud
+- [ ] Current API key tested and working
 - [ ] MongoDB password changed in Atlas
 - [ ] New password tested with mongosh (optional)
 - [ ] `food_api/.env` file created
