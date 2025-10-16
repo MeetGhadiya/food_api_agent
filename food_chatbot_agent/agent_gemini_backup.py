@@ -26,7 +26,7 @@ import requests
 from dotenv import load_dotenv
 import json
 from typing import Dict, Any, Optional, List
-import google.generativeai as genai  # type: ignore
+import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
@@ -1080,10 +1080,7 @@ def chat():
     greets them by name and offers personalized suggestions based on their order history.
     """
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid JSON request"}), 400
-            
+        data = request.json
         user_message = data.get('message', '')
         user_id = data.get('user_id', 'guest')
         
