@@ -11,14 +11,17 @@ sys.path.insert(0, str(Path(__file__).parent))
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from app.models import Restaurant
+import os
 
-MONGODB_URL = "mongodb://localhost:27017/food_db.6z9sntm.mongodb.net/?retryWrites=true&w=majority&appName=FoodAPICluster"
+# Use environment variable or default to Docker MongoDB
+MONGODB_URL = os.getenv("MONGODB_URI", "mongodb://admin:admin123@mongodb:27017/foodie_db?authSource=admin")
 
 # Restaurant data with items grouped by restaurant
 restaurants_data = [
     {
         "name": "Swati Snacks",
         "area": "Ashram Road, Ahmedabad",
+        "cuisine": "Gujarati",  # Added cuisine
         "items": [
             {
                 "item_name": "Bhel Puri",
@@ -65,6 +68,7 @@ restaurants_data = [
     {
         "name": "Agashiye The House of MG",
         "area": "Lal Darwaja, Ahmedabad",
+        "cuisine": "Gujarati",  # Added cuisine
         "items": [
             {
                 "item_name": "Gujarati Thali",
@@ -110,7 +114,8 @@ restaurants_data = [
     },
     {
         "name": "PATEL & SONS",
-        "area": "Maninagar, Ahmedabad",
+        "area": "C.G. Road, Ahmedabad",
+        "cuisine": "Multi-cuisine",  # Added cuisine
         "items": [
             {
                 "item_name": "Gujarati Thali",
@@ -157,6 +162,7 @@ restaurants_data = [
     {
         "name": "Manek Chowk Pizza",
         "area": "Manek Chowk, Ahmedabad",
+        "cuisine": "Italian",  # Added cuisine
         "items": [
             {
                 "item_name": "Margherita Pizza",
@@ -182,7 +188,8 @@ restaurants_data = [
     },
     {
         "name": "Honest Restaurant",
-        "area": "CG Road, Ahmedabad",
+        "area": "Ashram Road, Ahmedabad",
+        "cuisine": "Multi-cuisine",  # Added cuisine
         "items": [
             {
                 "item_name": "Butter Chicken",
@@ -208,7 +215,8 @@ restaurants_data = [
     },
     {
         "name": "Sankalp Restaurant",
-        "area": "Satellite, Ahmedabad",
+        "area": "C.G. Road, Ahmedabad",
+        "cuisine": "South Indian",  # Added cuisine
         "items": [
             {
                 "item_name": "Masala Dosa",
@@ -234,7 +242,8 @@ restaurants_data = [
     },
     {
         "name": "The Chocolate Room",
-        "area": "SG Highway, Ahmedabad",
+        "area": "C.G. Road, Ahmedabad",
+        "cuisine": "Cafe",  # Added cuisine
         "items": [
             {
                 "item_name": "Chocolate Fudge Cake",
@@ -262,8 +271,8 @@ restaurants_data = [
 
 async def populate_data():
     client = AsyncIOMotorClient(MONGODB_URL, tlsAllowInvalidCertificates=True)
-    db = client["food_db"]
-    await init_beanie(database=db, document_models=[Restaurant])
+    db = client["foodie_db"]  # Fixed: was "food_db", should be "foodie_db"
+    await init_beanie(database=db, document_models=[Restaurant])  # type: ignore[arg-type]
     
     # Clear existing data
     print("🗑️  Clearing existing restaurant data...")

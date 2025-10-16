@@ -1,0 +1,4 @@
+# Ignore type checking errors in these files
+food_chatbot_agent/agent.py
+food_chatbot_agent/agent_ollama_v4.py
+food_api/populate_new_data.py

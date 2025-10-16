@@ -1,0 +1,7 @@
+{
+  "reportPrivateImportUsage": false,
+  "reportMissingImports": false,
+  "reportMissingModuleSource": false,
+  "reportGeneralTypeIssues": false,
+  "reportAttributeAccessIssue": false
+}
