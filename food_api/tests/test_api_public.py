@@ -2,7 +2,8 @@
 Integration Tests for Public API Endpoints
 Tests restaurant listing, search, and public data access
 
-TEST COVERAGE:
+TEST COVERAGE (100% aligned with TEST_PLAN_V2.txt):
+- PUB-001 to PUB-015: Public endpoints
 - Restaurant listing and filtering
 - Restaurant search by name
 - Item search functionality
@@ -20,16 +21,26 @@ class TestRestaurantEndpoints:
     """Test public restaurant endpoints"""
     
     @pytest.mark.asyncio
-    async def test_get_root(self, async_client):
-        """Test root endpoint returns welcome message"""
+    async def test_pub_001_get_root(self, async_client):
+        """
+        TEST ID: PUB-001
+        DESCRIPTION: Verify the root welcome endpoint is functional
+        INPUT: GET /
+        EXPECTED OUTPUT:
+            Status Code: 200 OK
+            Response Body: JSON with project version and features
+            Business Rule: Root endpoint accessibility
+        """
         response = await async_client.get("/")
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert "message" in data
         assert "version" in data
-        assert data["version"] == "2.2.0"
+        assert data["version"] == "4.0.0"
         assert "features" in data
+        assert isinstance(data["features"], list)
+        assert len(data["features"]) > 0
     
     @pytest.mark.asyncio
     async def test_get_all_restaurants(self, async_client):

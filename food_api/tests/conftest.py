@@ -9,7 +9,7 @@ from httpx import AsyncClient, ASGITransport
 from fastapi.testclient import TestClient
 from app.main import app
 from app.database import init_db
-from app.models import User, Restaurant, Order, Review
+from app.models import User, Restaurant, Order, Review, OrderItem
 from app.security import hash_password
 
 
@@ -99,6 +99,122 @@ def auth_token(client, test_user):
     )
     assert response.status_code == 200
     return response.json()["access_token"]
+
+
+@pytest.fixture
+async def auth_token_async(async_client, test_user):
+    """Get an authentication token for a test user (async version)"""
+    response = await async_client.post(
+        "/users/login",
+        data={
+            "username": test_user.username,
+            "password": "testpassword123"
+        }
+    )
+    assert response.status_code == 200
+    return response.json()["access_token"]
+
+
+@pytest.fixture
+async def admin_auth_token_async(async_client, test_admin):
+    """Get an authentication token for admin user (async version)"""
+    response = await async_client.post(
+        "/users/login",
+        data={
+            "username": test_admin.username,
+            "password": "adminpass123"
+        }
+    )
+    assert response.status_code == 200
+    return response.json()["access_token"]
+
+
+@pytest.fixture
+async def multiple_test_restaurants():
+    """Create multiple test restaurants for advanced testing"""
+    restaurants = []
+    
+    restaurant_data = [
+        {
+            "name": "Test Italian Restaurant",
+            "area": "Downtown",
+            "cuisine": "Italian",
+            "items": [
+                {"item_name": "Pizza Margherita", "price": 250},
+                {"item_name": "Pasta Carbonara", "price": 300}
+            ]
+        },
+        {
+            "name": "Test Gujarati Restaurant",
+            "area": "Satellite",
+            "cuisine": "Gujarati",
+            "items": [
+                {"item_name": "Dhokla", "price": 50},
+                {"item_name": "Thepla", "price": 60}
+            ]
+        },
+        {
+            "name": "Test Chinese Restaurant",
+            "area": "CG Road",
+            "cuisine": "Chinese",
+            "items": [
+                {"item_name": "Fried Rice", "price": 180},
+                {"item_name": "Manchurian", "price": 200}
+            ]
+        }
+    ]
+    
+    for data in restaurant_data:
+        # Clean up if exists
+        existing = await Restaurant.find_one(Restaurant.name == data["name"])
+        if existing:
+            await existing.delete()
+        
+        restaurant = Restaurant(**data)
+        await restaurant.insert()
+        restaurants.append(restaurant)
+    
+    yield restaurants
+    
+    # Cleanup
+    for restaurant in restaurants:
+        try:
+            await restaurant.delete()
+        except:
+            pass
+
+
+@pytest.fixture
+async def test_user_with_orders(test_user, test_restaurant):
+    """Create a test user with existing orders"""
+    orders = []
+    
+    # Create sample orders
+    for i in range(3):
+        order = Order(
+            user_id=test_user.id,
+            restaurant_name=test_restaurant.name,
+            items=[
+                OrderItem(
+                    item_name=f"Test Item {i+1}",
+                    quantity=i+1,
+                    price=100.0 * (i+1)
+                )
+            ],
+            total_price=100.0 * (i+1) * (i+1),
+            status="placed"
+        )
+        await order.insert()
+        orders.append(order)
+    
+    yield test_user, orders
+    
+    # Cleanup
+    for order in orders:
+        try:
+            await order.delete()
+        except:
+            pass
 
 
 @pytest.fixture
