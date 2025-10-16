@@ -5,7 +5,7 @@ Shared test fixtures for the FoodieExpress test suite
 
 import pytest
 import asyncio
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from fastapi.testclient import TestClient
 from app.main import app
 from app.database import init_db
@@ -16,17 +16,14 @@ from app.security import hash_password
 @pytest.fixture(scope="session")
 def event_loop():
     """Create an event loop for the test session"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     yield loop
     loop.close()
 
 
-@pytest.fixture(scope="session", autouse=True)
-async def setup_database():
-    """Initialize database before running tests"""
-    await init_db()
-    yield
-    # Cleanup after tests if needed
+# Remove the session-scoped setup_database fixture
+# Database will be initialized automatically by Beanie
 
 
 @pytest.fixture
@@ -38,7 +35,8 @@ def client():
 @pytest.fixture
 async def async_client():
     """Create an async HTTP client for testing FastAPI endpoints"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
 
@@ -60,7 +58,10 @@ async def test_user():
     yield user
     
     # Cleanup
-    await user.delete()
+    try:
+        await user.delete()
+    except:
+        pass  # Already deleted
 
 
 @pytest.fixture
@@ -80,7 +81,10 @@ async def test_admin():
     yield admin
     
     # Cleanup
-    await admin.delete()
+    try:
+        await admin.delete()
+    except:
+        pass  # Already deleted
 
 
 @pytest.fixture
@@ -99,8 +103,10 @@ def auth_token(client, test_user):
 
 @pytest.fixture
 def sample_restaurant():
-    """Create a test restaurant (alias for test_restaurant)"""
-    return test_restaurant()
+    """Create a test restaurant (returns fixture reference)"""
+    # This is a reference fixture that points to test_restaurant
+    # Don't call test_restaurant() directly, just reference it
+    return None  # Will be overridden in tests that use test_restaurant
 
 
 @pytest.fixture
@@ -123,7 +129,10 @@ async def test_restaurant():
     yield restaurant
     
     # Cleanup
-    await restaurant.delete()
+    try:
+        await restaurant.delete()
+    except:
+        pass  # Already deleted
 
 
 # Test data constants

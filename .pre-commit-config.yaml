@@ -1,0 +1,71 @@
+# Pre-commit hooks configuration
+# Install with: pip install pre-commit
+# Run with: pre-commit install
+
+repos:
+  # Detect secrets in commits
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package-lock.json
+
+  # Check for common security issues
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # Prevent large files from being committed
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      
+      # Detect private keys
+      - id: detect-private-key
+      
+      # Check for merge conflicts
+      - id: check-merge-conflict
+      
+      # Check YAML syntax
+      - id: check-yaml
+        args: ['--unsafe']
+      
+      # Check JSON syntax
+      - id: check-json
+      
+      # Prevent committing to main/master
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'master']
+      
+      # Trim trailing whitespace
+      - id: trailing-whitespace
+      
+      # Fix end of files
+      - id: end-of-file-fixer
+
+  # Python-specific hooks
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3
+
+  # Check for hardcoded passwords (custom)
+  - repo: local
+    hooks:
+      - id: check-hardcoded-passwords
+        name: Check for hardcoded passwords
+        entry: bash -c 'if grep -rn --include="*.md" --include="*.py" --include="*.js" -E "(password|passwd|pwd)[\s]*=[\s]*['\''\"'][^'\''\"]+" .; then echo "Found hardcoded passwords!"; exit 1; fi'
+        language: system
+        pass_filenames: false
+      
+      - id: check-mongodb-credentials
+        name: Check for MongoDB credentials
+        entry: bash -c 'if grep -rn --include="*.md" --include="*.py" -E "mongodb\+srv://.*:.*@" .; then echo "Found MongoDB credentials!"; exit 1; fi'
+        language: system
+        pass_filenames: false
+      
+      - id: check-api-keys
+        name: Check for API keys
+        entry: bash -c 'if grep -rn --include="*.md" --include="*.py" --include="*.js" -E "(api_key|apikey|api-key)[\s]*=[\s]*['\''\"'][A-Za-z0-9]{20,}" .; then echo "Found API keys!"; exit 1; fi'
+        language: system
+        pass_filenames: false

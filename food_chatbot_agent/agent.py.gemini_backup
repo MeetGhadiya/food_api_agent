@@ -26,11 +26,7 @@ import requests
 from dotenv import load_dotenv
 import json
 from typing import Dict, Any, Optional, List
-
-try:
-    import google.generativeai as genai  # type: ignore[import]
-except ImportError:
-    genai = None  # type: ignore[assignment]
+import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
@@ -40,8 +36,8 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
     print("⚠️  WARNING: GOOGLE_API_KEY not found in environment variables")
     print("   AI functionality will be limited")
-elif genai:
-    genai.configure(api_key=GOOGLE_API_KEY)  # type: ignore[attr-defined]
+else:
+    genai.configure(api_key=GOOGLE_API_KEY)
     print("✅ Google Gemini AI configured")
 
 # Initialize Flask app
@@ -55,13 +51,8 @@ CORS(app, origins=["http://localhost:5173", "http://localhost:5174", "http://loc
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")  # Default model
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
 
-# CRITICAL FOR TESTING: Use local Ollama instead of Gemini to avoid rate limits
-# Hard-coded to True to bypass environment variable issues in PowerShell
-USE_OLLAMA = True  # ALWAYS use Ollama for stable testing
-
 print(f"🤖 Using Ollama Model: {OLLAMA_MODEL}")
 print(f"🔗 Ollama Server: {OLLAMA_URL}")
-print(f"⚙️  AI Mode: {'LOCAL OLLAMA' if USE_OLLAMA else 'GOOGLE GEMINI'}")
 
 # API Configuration
 FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "http://localhost:8000")
@@ -79,18 +70,6 @@ chat_sessions: Dict[str, list] = {}
 pending_orders: Dict[str, Dict[str, Any]] = {}
 # V4.0: Track recent orders for proactive review prompts
 recent_orders: Dict[str, Dict[str, Any]] = {}  # {user_id: {restaurant_name, order_id, turns_since_order}}
-
-# STABILITY FIX: Session cleanup to prevent memory leaks
-MAX_SESSION_MESSAGES = 20  # Keep only last 20 messages per session
-SESSION_CLEANUP_THRESHOLD = 100  # Cleanup when we have 100+ sessions
-
-def cleanup_old_sessions():
-    """Remove sessions that exceed message limit to prevent memory leaks"""
-    global chat_sessions
-    if len(chat_sessions) > SESSION_CLEANUP_THRESHOLD:
-        # Keep only sessions with recent activity
-        chat_sessions = {k: v[-MAX_SESSION_MESSAGES:] for k, v in list(chat_sessions.items())[:50]}
-        print(f"🧹 Cleaned up old sessions, keeping 50 most recent")
 
 # ==================== REDIS SESSION STORE (V4.0 PRODUCTION-READY) ====================
 # V4.0: Redis integration for stateful, persistent sessions
@@ -224,17 +203,16 @@ def delete_from_redis(user_id: str, key: Optional[str] = None):
 # ==================== FUNCTION DECLARATIONS ====================
 
 # Define functions that Gemini AI can call
-# NOTE: Type checking disabled for google.generativeai - package lacks type stubs
-function_declarations = [  # type: ignore[misc]
-    genai.protos.FunctionDeclaration(  # type: ignore
+function_declarations = [
+    genai.protos.FunctionDeclaration(
         name="get_all_restaurants",
         description="REQUIRED: Get complete list of ALL restaurants with name, location, and cuisine. MUST be called when user asks to: list, show, see, browse, get, display, or find restaurants (any variation). DO NOT respond without calling this function for restaurant lists.",
-        parameters=genai.protos.Schema(  # type: ignore
-            type=genai.protos.Type.OBJECT,  # type: ignore
+        parameters=genai.protos.Schema(
+            type=genai.protos.Type.OBJECT,
             properties={}
         )
     ),
-    genai.protos.FunctionDeclaration(  # type: ignore
+    genai.protos.FunctionDeclaration(
         name="get_restaurant_by_name",
         description="Get detailed information about a specific restaurant by its exact name. Use when user asks about a particular restaurant. V4.0: This function saves the restaurant name to user's session context.",
         parameters=genai.protos.Schema(
@@ -656,113 +634,6 @@ def search_restaurants_by_item(item_name: str) -> str:
         return f"🔌 Cannot connect to the restaurant database. Please check if the backend service is running."
     except Exception as e:
         return f"❌ An unexpected error occurred while searching for {item_name}: {str(e)}"
-
-
-# ==================== GRANULAR TOOLS (V4.0 ENHANCEMENT) ====================
-# These focused tools make queries more efficient by returning only what's needed
-
-def get_menu(restaurant_name: str, user_id: str = "guest") -> str:
-    """
-    Get ONLY the menu for a specific restaurant.
-    More efficient than get_restaurant_by_name when user only wants menu items.
-    
-    Args:
-        restaurant_name: Name of the restaurant
-        user_id: User identifier (for context saving)
-    
-    Returns:
-        Formatted menu items with prices
-    """
-    try:
-        response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/{restaurant_name}")
-        if response.status_code == 200:
-            restaurant = response.json()
-            
-            # Save context
-            save_to_redis(user_id, 'last_entity', restaurant_name, ttl=600)
-            
-            result = f"📋 **Menu for {restaurant['name']}**\n\n"
-            
-            items = restaurant.get('items', [])
-            if items:
-                for item in items:
-                    item_name = item.get('item_name', item.get('name', 'Unknown Item'))
-                    price = item.get('price', 'N/A')
-                    result += f"• **{item_name}** - ₹{price}\n"
-            else:
-                result += "Menu items are being updated. Please check back soon!\n"
-            
-            result += "\n💡 Ready to order? Just tell me what you'd like!"
-            return result
-        elif response.status_code == 404:
-            return f"😔 Restaurant '{restaurant_name}' not found."
-        else:
-            return f"❌ Error: {response.status_code}"
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
-def get_restaurant_location(restaurant_name: str, user_id: str = "guest") -> str:
-    """
-    Get ONLY the location/area for a specific restaurant.
-    More efficient when user asks "where is X located?"
-    
-    Args:
-        restaurant_name: Name of the restaurant
-        user_id: User identifier (for context saving)
-    
-    Returns:
-        Location information
-    """
-    try:
-        response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/{restaurant_name}")
-        if response.status_code == 200:
-            restaurant = response.json()
-            
-            # Save context
-            save_to_redis(user_id, 'last_entity', restaurant_name, ttl=600)
-            
-            result = f"📍 **{restaurant['name']}**\n"
-            result += f"Location: {restaurant['area']}, Ahmedabad\n\n"
-            result += "🚗 Need directions? Search for this address on Google Maps!"
-            return result
-        elif response.status_code == 404:
-            return f"😔 Restaurant '{restaurant_name}' not found."
-        else:
-            return f"❌ Error: {response.status_code}"
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
-def get_restaurant_cuisine(restaurant_name: str, user_id: str = "guest") -> str:
-    """
-    Get ONLY the cuisine type for a specific restaurant.
-    
-    Args:
-        restaurant_name: Name of the restaurant
-        user_id: User identifier (for context saving)
-    
-    Returns:
-        Cuisine information
-    """
-    try:
-        response = requests.get(f"{FASTAPI_BASE_URL}/restaurants/{restaurant_name}")
-        if response.status_code == 200:
-            restaurant = response.json()
-            
-            # Save context
-            save_to_redis(user_id, 'last_entity', restaurant_name, ttl=600)
-            
-            cuisine = restaurant.get('cuisine', 'Not specified')
-            result = f"🍴 **{restaurant['name']}** serves **{cuisine}** cuisine.\n\n"
-            result += f"💡 Want to see other {cuisine} restaurants? Just ask!"
-            return result
-        elif response.status_code == 404:
-            return f"😔 Restaurant '{restaurant_name}' not found."
-        else:
-            return f"❌ Error: {response.status_code}"
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
 
 
 def prepare_order_for_confirmation(user_id: str, restaurant_name: str, items: List[Dict[str, Any]]) -> str:
@@ -1209,10 +1080,7 @@ def chat():
     greets them by name and offers personalized suggestions based on their order history.
     """
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid JSON request"}), 400
-            
+        data = request.json
         user_message = data.get('message', '')
         user_id = data.get('user_id', 'guest')
         
@@ -1453,168 +1321,207 @@ Ready to order some delicious food? Let me know what you're craving! 🍽️"""
         # ==================== CONTINUE WITH NORMAL CHAT FLOW ====================
         
         # PHASE 1.3 & 3: Enhanced system instruction with seamless auth + improved UX
-        system_instruction = """You are 'Foodie', a witty and enthusiastic food expert for Ahmedabad! 🍕✨
+        system_instruction = """You are a friendly and enthusiastic food delivery assistant! 🍕
 
-**YOUR PERSONA:**
-- You're passionate about helping people discover amazing food
-- You use emojis to convey excitement and friendliness
-- You're helpful but never robotic - you have personality!
-- You love making personalized recommendations
-- You're knowledgeable about Ahmedabad's food scene
+Your personality:
+- Use emojis frequently (🍽️, 🏪, ⭐, 💰, 🎉, ✅, 😊, 🔍, etc.)
+- Be warm, welcoming, and helpful
+- Guide users through ordering, reviewing, and browsing
+- Celebrate their actions (orders, reviews) with enthusiasm!
 
-**CHAIN-OF-THOUGHT REASONING (V4.0 ENHANCEMENT):**
-Before providing a final answer, think through the user's request step-by-step:
-
-1. **Identify Core Intent**: What is the user REALLY asking for?
-   - Are they looking for food? → search_restaurants_by_item()
-   - Are they browsing? → get_all_restaurants() or search_restaurants_by_cuisine()
-   - Are they ordering? → prepare_order_for_confirmation()
-   - Do they need information? → get_restaurant_by_name()
-
-2. **Check for Context**: Is there a last_entity (previous restaurant)?
-   - If YES and request is vague → USE IT immediately
-   - If NO and request is vague → Ask for clarification
-
-3. **Determine Which Tool**: Which function best solves their need?
-   - Specific item → search_restaurants_by_item()
-   - Specific restaurant → get_restaurant_by_name() or granular tools
-   - Browse all → get_all_restaurants()
-   - Cuisine filter → search_restaurants_by_cuisine()
-
-4. **Formulate Response**: After getting tool results, provide helpful answer
-
-**RULES FOR AMBIGUITY (V4.0 ENHANCEMENT):**
-When a user's request is ambiguous or unclear:
-
-1. **If context exists** → Use it! Don't ask again
-2. **If request is too broad** → Offer helpful alternatives
-   Example: User: "I want something cheap"
-   You: "I'd love to help you find affordable options! 🍽️ What do you consider a cheap price range? Under ₹50? ₹50-₹100? Also, any cuisine preferences?"
-
-3. **If request is missing details** → Ask ONE clarifying question
-   Example: User: "order a pizza"
-   You: "Pizza coming up! � We have **Manek Chowk Pizza** that serves amazing pizzas. How many would you like?"
-
-4. **NEVER say "I don't understand"** → Always try to help
-   Bad: "I don't understand your request"
-   Good: "I'm here to help! Are you looking to order food, browse restaurants, or see reviews? �️"
-
-**GRANULAR TOOLS (V4.0):**
-Use these efficient tools for specific requests:
-- get_menu(restaurant_name, user_id) → ONLY menu items
-- get_restaurant_location(restaurant_name, user_id) → ONLY location
-- get_restaurant_cuisine(restaurant_name, user_id) → ONLY cuisine type
-- get_reviews(restaurant_name) → Reviews only
-- get_restaurant_by_name(restaurant_name, user_id) → FULL details
-
-Choose the right tool for efficiency!
-
-**YOUR CAPABILITIES:**
-1. **Item Search** 🔍: Find restaurants by dish name
-2. **Browse** 📋: Show all restaurants or filter by cuisine
-3. **Order** 🛒: Multi-item orders with confirmation (TWO-STEP PROCESS!)
-4. **Reviews** ⭐: Submit & view ratings
-5. **History** 📦: Track past orders
-6. **Smart Search** 🎯: Gujarati, Italian, South Indian, Multi-cuisine, Cafe
+Key capabilities (ALWAYS use functions to get real data):
+1. **Item Search**: Find which restaurants serve a specific dish (NEW!)
+2. **Browsing**: Show all restaurants or filter by cuisine type
+3. **Ordering**: Handle multi-item orders with quantities and prices
+4. **Reviews**: Submit reviews (1-5 stars), view reviews, see statistics
+5. **Orders**: Track order history with detailed item breakdowns
+6. **Search**: Find restaurants by cuisine (Gujarati, Italian, South Indian, Multi-cuisine, Cafe)
 
 ⚠️ CRITICAL: SEAMLESS AUTHENTICATION (Phase 1.3)
-**NEVER ASK AUTHENTICATED USERS TO LOG IN!**
-- If token provided → User IS logged in
-- Proceed immediately with their action
-- NEVER ask for username/password again
+**YOU MUST NEVER ASK AUTHENTICATED USERS TO LOG IN!**
 
-⚠️ CRITICAL: V4.0 ORDER CONFIRMATION (TWO-STEP PROCESS)
-**ALWAYS CONFIRM BEFORE PLACING ORDERS!**
+- If a user is already authenticated (a token is provided with their message), they are LOGGED IN
+- NEVER ask them for their username or password
+- NEVER tell them to "please login first"
+- IMMEDIATELY proceed with their requested action (place order, view orders, etc.)
+- The authentication system handles everything automatically behind the scenes
 
-Step 1: User requests order → Call prepare_order_for_confirmation()
-Step 2: System handles confirmation automatically
+Example:
+❌ WRONG: "Please log in first to place an order"
+✅ CORRECT: "Great! Let me place that order for you..." [proceeds to place order]
 
-NEVER call place_order() directly!
+⚠️ CRITICAL: V4.0 ORDER CONFIRMATION WORKFLOW
+**TWO-STEP ORDER PROCESS - ALWAYS CONFIRM BEFORE PLACING!**
 
-⚠️ CRITICAL: V4.0 CONTEXT AWARENESS
-**REMEMBER CONVERSATIONS - NEVER ASK TWICE!**
+When user wants to order food:
+1. **STEP 1**: Call prepare_order_for_confirmation(user_id, restaurant_name, items)
+   - This calculates total and asks for confirmation
+   - DO NOT call place_order directly
+   - The system will save the pending order and ask user to confirm
 
-If user just viewed "Swati Snacks" and asks "show menu":
-- DON'T ask "Which restaurant?"
-- USE CONTEXT immediately → call get_menu("Swati Snacks", user_id)
+2. **STEP 2**: User confirms (handled automatically by system)
+   - User says "yes", "ok", "confirm", "yep" → Order is placed automatically
+   - User says "no", "cancel" → Order is cancelled
+   - You don't need to handle confirmation - the system does it
 
-Vague requests like "show the menu", "what are reviews", "order from there"
-ALL refer to the last mentioned restaurant when context exists!
+Example Flow:
+User: "order 2 Masala Thepla from Thepla House"
+You: [Call prepare_order_for_confirmation with user_id, restaurant_name, items]
+System: Shows confirmation message with total price
+User: "yes"
+System: Automatically executes place_order and shows success message
 
-⚠️ CRITICAL: PRIORITIZE USER INTENT
-**SOLVE IMMEDIATE NEEDS INTELLIGENTLY:**
+IMPORTANT:
+- NEVER call place_order directly when user first requests an order
+- ALWAYS use prepare_order_for_confirmation first
+- The confirmation step is automatic - you just prepare the order
+- This prevents accidental orders and builds user trust
 
-1. **Item requests** ("find pizza", "order bhel"):
-   - IMMEDIATELY search_restaurants_by_item()
-   - DON'T ask cuisine first
-   - Show options, then proceed
+⚠️ CRITICAL: V4.0 TASK 1 - CONTEXT AWARENESS (CONTEXT RULE)
+**REMEMBER WHAT USER JUST VIEWED - NEVER ASK TWICE!**
 
-2. **Restaurant just mentioned** + vague follow-up:
-   - "what's the menu?" → Use context
-   - "tell me more" → Use context
-   - DON'T make them repeat restaurant name
+**Context Rule:** When the user's request is vague (e.g., 'show the menu', 'what are the reviews?', 
+'order one of those', 'tell me more', 'what's available'), you MUST FIRST check if a 'last_entity' 
+(the last mentioned restaurant) has been provided to you in the contextual_prompt.
 
-3. **Be Proactive**:
-   - Search fails? → Suggest alternatives
-   - Request too broad? → Offer helpful options
-   - Always provide next steps
+If a last_entity is present:
+- IMMEDIATELY use it - DO NOT ask for the restaurant name again
+- Call the appropriate function with that restaurant name
+- Example: If user previously asked about "Swati Snacks" and now says "show the menu",
+  IMMEDIATELY call get_restaurant_by_name("Swati Snacks", user_id)
 
-4. **Maintain Context**:
-   - Full conversation history provided
-   - Track recent topics
-   - Flow naturally without repetition
+When user views restaurant details (e.g., "tell me about Thepla House"), the system automatically 
+saves this as context. Vague follow-up questions like:
+- "show me the menu"
+- "what do they have"
+- "tell me more"
+- "what's available"
+- "get the reviews"
+- "order from there"
 
-⚠️ FUNCTION CALLING RULES:
-- Item search → search_restaurants_by_item()
-- List/browse → get_all_restaurants()
-- Cuisine filter → search_restaurants_by_cuisine()
-- Specific restaurant → get_restaurant_by_name() or granular tools
-- ALWAYS use functions - NEVER make up data
+ALL refer to the last mentioned restaurant. The context is automatically provided to you.
+You don't need to ask "Which restaurant?" - USE THE CONTEXT IMMEDIATELY!
 
-🚀 INSTANT RESPONSE - NO INTERMEDIATE MESSAGES:
+⚠️ CRITICAL: PRIORITIZE USER INTENT (Phase 3.2 Enhancement)
+Your PRIMARY goal is to solve the user's immediate request intelligently:
+
+1. **When user wants to order/find a specific food item** (e.g., "order bhel", "find pizza", "I want pasta"):
+   - IMMEDIATELY call search_restaurants_by_item(item_name) as your FIRST action
+   - Do NOT ask for cuisine preference first
+   - Do NOT ask which restaurant first
+   - Find the item, then present options to the user
+   
+2. **When user asks about a specific restaurant that was JUST mentioned**:
+   - Pay close attention to conversation history
+   - If a restaurant was mentioned in previous turn, vague questions like:
+     * "what is the menu?"
+     * "yes menu please"
+     * "show me their items"
+     * "tell me more"
+   - All refer to THAT SPECIFIC RESTAURANT - do NOT ask them to repeat the name
+   - Call get_restaurant_by_name() with the restaurant from context
+
+3. **Be Proactive and Helpful** (Phase 3 UX Enhancement):
+   - If a specific search fails (e.g., "find bhel in Gujarati restaurants"), don't give up
+   - Proactively suggest a broader search
+   - Example: "I couldn't find bhel in any Gujarati restaurants, but I did find it at Honest Restaurant (Multi-cuisine). Would you like to see their menu?"
+   - Always provide helpful next steps
+   
+   - **When user asks for something too broad** (e.g., "list all items"):
+     * DO NOT simply refuse with "I can't do that"
+     * Instead, acknowledge the limitation and offer helpful alternatives
+     * Example: "That would be a very long list! 📋 To help you find what you're looking for, I can:
+       • Show you the full menu for a specific restaurant
+       • Search for a particular item (like pizza, dhokla, etc.)
+       • Filter by cuisine type (Gujarati, Italian, etc.)
+       What works best for you?"
+
+4. **Maintain Conversation Context** (Phase 3.1):
+   - Full conversation history is provided to you in every request
+   - Use this context to understand follow-up questions
+   - Track what restaurant, items, or topics were just discussed
+   - Make the conversation flow naturally without repetition
+
+⚠️ CRITICAL FUNCTION CALLING RULES:
+- When user wants to ORDER or FIND a specific ITEM → MUST call search_restaurants_by_item() FIRST
+- When user asks to "list", "show", "see", "browse" restaurants → MUST call get_all_restaurants()
+- When user mentions a cuisine type (Gujarati, Italian, etc.) → MUST call search_restaurants_by_cuisine()
+- When user asks about ONE specific restaurant → MUST call get_restaurant_by_name()
+- ALWAYS call functions to get real data - NEVER make up restaurant information
+- NEVER respond without calling a function when data is needed
+
+🚀 INSTANT RESPONSE RULE - NO INTERMEDIATE MESSAGES:
+When user asks to "list", "show all", or "browse" restaurants:
+- DO NOT send a "waiting" or "let me get that" message first
+- IMMEDIATELY call the function WITHOUT any prior response
+- Only respond ONCE with the complete function results
+- The user wants SPEED - don't make them wait for intermediate messages!
+
+CORRECT Pattern (list requests):
 User: "list all restaurants"
-[IMMEDIATELY call function - NO "let me get that" message]
-You: [ONE response with complete results]
+[IMMEDIATELY call get_all_restaurants() - NO MESSAGE BEFORE THIS]
+You: [ONE response with full restaurant list]
 
-⚠️ DISPLAY FUNCTION RESULTS VERBATIM:
-**COPY-PASTE ENTIRE FUNCTION OUTPUT INTO YOUR RESPONSE!**
-- DO NOT summarize or truncate
-- DO NOT show partial lists
-- If function shows 7 items, YOU show 7 items
-- Include ALL formatting: bullets, bold, emojis
+WRONG Pattern (NEVER DO THIS):
+User: "list all restaurants"  
+You: "Okay! Let me get that for you! 🔍" ← WRONG! Don't send this!
+[Call function]
+You: [Restaurant list] ← Now user had to wait twice!
 
-CORRECT: [Intro] + [COMPLETE FUNCTION OUTPUT UNMODIFIED]
-WRONG: "Here are the restaurants!" [shows nothing]
+⚠️ CRITICAL RESPONSE RULES AFTER FUNCTION CALLS:
+When you receive function results, you MUST present the data to the user.
+- The function result contains the COMPLETE, FORMATTED list of restaurants/items
+- Your job is to present this data naturally in your response
+- Include the intro message AND the complete data from the function
+- Keep ALL formatting: bullets (•), bold text (**), emojis
+- NEVER say "Here you go!" without including the actual data
 
-**PERSONALITY IN ACTION:**
-Instead of: "Restaurant found"
-Say: "Oh, you're gonna love this place! 🌟"
+🚨🚨🚨 ABSOLUTELY CRITICAL - DISPLAY FUNCTION RESULTS VERBATIM 🚨🚨🚨
+**YOU MUST COPY-PASTE THE ENTIRE FUNCTION RESULT INTO YOUR RESPONSE!**
 
-Instead of: "Order placed successfully"
-Say: "Woohoo! Your delicious order is on its way! 🎉"
+MANDATORY RULES:
+1. When a function returns data (especially lists), you MUST include THE COMPLETE, UNMODIFIED OUTPUT in your response
+2. DO NOT summarize, paraphrase, or truncate ANY part of the function result
+3. DO NOT say "here are the results" and then NOT show them
+4. DO NOT show partial lists (e.g., showing 3 out of 7 items)
+5. TREAT THE FUNCTION OUTPUT AS A LITERAL BLOCK OF TEXT TO QUOTE VERBATIM
 
-Instead of: "No results"
-Say: "Hmm, I couldn't find that exact item, but let me suggest something similar! 🤔"
+🔴 IF THE FUNCTION SAYS "SHOWING ALL 7 RESTAURANTS", YOUR RESPONSE MUST CONTAIN ALL 7 RESTAURANTS
+🔴 IF THE FUNCTION INCLUDES NUMBERED ITEMS 1-7, YOUR RESPONSE MUST SHOW ITEMS 1-7
+🔴 DO NOT ADD YOUR OWN INTRO AND THEN TRUNCATE THE LIST
 
-Make every interaction delightful! 🍽️✨"""
+CORRECT Response Pattern:
+User: "list all restaurants"
+Function returns: "📋 SHOWING ALL 7 RESTAURANTS:\n\n═══...═══\n🔸 RESTAURANT #1 OF 7\n🏪 Name: Swati Snacks\n📍 Area: Ashram Road\n🍴 Cuisine: Gujarati\n═══...═══\n🔸 RESTAURANT #2 OF 7\n🏪 Name: Agashiye\n..." [continues through #7]
+Your response: [Short intro] + [PASTE ENTIRE FUNCTION OUTPUT HERE UNMODIFIED]
 
-        # ==================== MODEL SELECTION
+WRONG Response Pattern (ABSOLUTELY FORBIDDEN):
+User: "list all restaurants"  
+Function returns: [7 restaurants]
+Your response: "Okay! Here's a list of ALL the restaurants! 🎉" ← WRONG! WHERE IS THE LIST?!
+
+For other operations:
+- Orders: Extract items, quantities, and prices from conversation
+- Reviews: Get rating (1-5) and comment text
+- Guide users naturally through multi-step processes
+- If authentication needed, politely inform them
+
+EXAMPLE DESIRED CONVERSATION FLOW (Phase 4):
+User: "order bhel"
+You: "I can help with that! Let me find which restaurants serve bhel... 🔍" [Call search_restaurants_by_item]
+You: "Okay, I found bhel at: • **Swati Snacks** in Ashram Road • **Honest Restaurant** in CG Road\n\nWhich one would you like to order from?"
+User: "Swati Snacks"
+You: "Excellent choice! Let me get the menu for Swati Snacks..." [Call get_restaurant_by_name]
+You: "Here is the menu for **Swati Snacks**: ... (displays menu) ... What would you like to add to your order besides bhel?"
+
+Make the experience delightful and intelligent! 🌟"""
         
-        # ==================== MODEL SELECTION: Ollama (Local) vs Gemini (Cloud) ====================
-        # For testing stability, use local Ollama. For production, use Gemini.
-        
-        if USE_OLLAMA:
-            # Use local Ollama for stable, fast testing
-            app.logger.info("🤖 Using LOCAL OLLAMA for AI processing")
-            model = None  # Ollama uses direct HTTP requests, not genai SDK
-        else:
-            # Use Google Gemini for production (requires internet, has rate limits)
-            app.logger.info("🌐 Using GOOGLE GEMINI for AI processing")
-            model = genai.GenerativeModel(
-                model_name='gemini-2.0-flash',
-                tools=[tools],
-                system_instruction=system_instruction
-            )
+        # Create model with function calling
+        model = genai.GenerativeModel(
+            model_name='gemini-2.0-flash',
+            tools=[tools],
+            system_instruction=system_instruction
+        )
         
         # ==================== CRITICAL FIX: FORCE FUNCTION CALLING FOR LIST REQUESTS ====================
         # Pre-detect list requests and directly call the function, bypassing AI decision
@@ -1661,146 +1568,6 @@ Make every interaction delightful! 🍽️✨"""
             "parts": [contextual_message]
         })
         
-        # ==================== OLLAMA PATH: Simple Pattern Matching ====================
-        # Ollama doesn't support function calling, so use rule-based routing
-        if USE_OLLAMA:
-            app.logger.info("🤖 Processing with OLLAMA (pattern matching)")
-            
-            # Cleanup sessions periodically to prevent memory leaks
-            cleanup_old_sessions()
-            
-            # Pattern matching for common queries
-            user_lower = user_message.lower()
-            response_text = None
-            
-            # Greeting patterns
-            if any(word in user_lower for word in ['hello', 'hi', 'hey', 'greet']):
-                response_text = "Hello there! 👋 I'm your friendly food delivery assistant, ready to help you with all your cravings! 🍽️ How can I make your day delicious? 😊"
-                
-            # Help/capabilities patterns
-            elif 'what can you do' in user_lower or ('help' in user_lower and len(user_lower) < 20) or 'capabilities' in user_lower:
-                response_text = "I can help you with:\n\n• 🔍 Finding restaurants\n• 📖 Browsing menus\n• 🍕 Ordering food\n• � Checking your order history\n• ⭐ Reading and writing reviews\n\nJust ask me what you need! 😊"
-                
-            # List all restaurants
-            elif any(phrase in user_lower for phrase in ['list all', 'show all', 'all restaurants', 'show me all']):
-                response_text = get_all_restaurants()
-                
-            # Search by cuisine - IMPROVED with better matching
-            elif 'gujarati' in user_lower or 'gujrati' in user_lower:
-                response_text = search_restaurants_by_cuisine('Gujarati')
-            elif 'italian' in user_lower:
-                response_text = search_restaurants_by_cuisine('Italian')
-            elif 'south indian' in user_lower or 'southindian' in user_lower:
-                response_text = search_restaurants_by_cuisine('South Indian')
-            elif 'multi-cuisine' in user_lower or 'multi cuisine' in user_lower or 'multicuisine' in user_lower:
-                response_text = search_restaurants_by_cuisine('Multi-cuisine')
-            elif 'cafe' in user_lower or 'coffee' in user_lower:
-                response_text = search_restaurants_by_cuisine('Cafe')
-            
-            # Check for context - vague requests like "show me the menu"
-            elif any(phrase in user_lower for phrase in ['show me the menu', "what's on the menu", 'the menu', 'menu items', 'what items', 'menu please']):
-                # Check if we have a last_entity in context
-                last_entity = get_from_redis(user_id, 'last_entity')
-                if last_entity:
-                    app.logger.info(f"🔥 CONTEXT HIT: Using last_entity={last_entity} for vague menu request")
-                    response_text = get_menu(last_entity, user_id)  # Use granular tool
-                else:
-                    response_text = "I'd be happy to show you a menu! Which restaurant would you like to see? 🏪"
-            
-            # Check for vague review requests
-            elif any(phrase in user_lower for phrase in ['what are the reviews', 'show reviews', 'the reviews', 'reviews for']):
-                last_entity = get_from_redis(user_id, 'last_entity')
-                if last_entity and 'for' not in user_lower:  # "reviews for X" is specific
-                    app.logger.info(f"🔥 CONTEXT HIT: Using last_entity={last_entity} for vague review request")
-                    response_text = get_reviews(last_entity)
-                else:
-                    response_text = "I can show you reviews! Which restaurant would you like to see reviews for? 🌟"
-            
-            # Check for vague location requests - USE GRANULAR TOOL
-            elif any(phrase in user_lower for phrase in ['where is it', 'location', 'where located', 'where can i find it', 'address']):
-                last_entity = get_from_redis(user_id, 'last_entity')
-                if last_entity:
-                    app.logger.info(f"🔥 CONTEXT HIT: Using last_entity={last_entity} for location request")
-                    response_text = get_restaurant_location(last_entity, user_id)  # Use granular tool
-                else:
-                    response_text = "Which restaurant's location would you like to know? 📍"
-            
-            # Check for cuisine type questions - USE GRANULAR TOOL
-            elif any(phrase in user_lower for phrase in ['what cuisine', 'what type of food', 'what kind of food']):
-                last_entity = get_from_redis(user_id, 'last_entity')
-                if last_entity:
-                    app.logger.info(f"🔥 CONTEXT HIT: Using last_entity={last_entity} for cuisine request")
-                    response_text = get_restaurant_cuisine(last_entity, user_id)  # Use granular tool
-                else:
-                    response_text = "Which restaurant's cuisine would you like to know about? 🍴"
-                
-            # Specific restaurant info - check all restaurant names
-            elif 'tell me about' in user_lower or 'info about' in user_lower or 'details about' in user_lower or 'about' in user_lower:
-                restaurants = ['Swati Snacks', 'Agashiye The House of MG', 'PATEL & SONS', 'Manek Chowk Pizza', 'Honest Restaurant', 'Sankalp Restaurant', 'The Chocolate Room', 'Thepla House']
-                for restaurant in restaurants:
-                    if restaurant.lower() in user_lower or restaurant.replace(' ', '').lower() in user_lower.replace(' ', ''):
-                        response_text = get_restaurant_by_name(restaurant, user_id)
-                        break
-                if not response_text:
-                    response_text = "I'd love to tell you about that restaurant! Could you please specify which one? You can say 'tell me about Swati Snacks' for example. 🏪"
-                    
-            # Search for specific items
-            elif any(word in user_lower for word in ['bhel', 'where can i find bhel', 'bhel puri', 'has bhel']):
-                response_text = search_restaurants_by_item('Bhel')
-            elif any(word in user_lower for word in ['pizza', 'where can i find pizza', 'has pizza']):
-                response_text = search_restaurants_by_item('Pizza')
-            elif any(word in user_lower for word in ['dhokla', 'where can i find dhokla', 'has dhokla']):
-                response_text = search_restaurants_by_item('Dhokla')
-            elif any(word in user_lower for word in ['thepla', 'where can i find thepla', 'has thepla']):
-                response_text = search_restaurants_by_item('Thepla')
-            
-            # Order handling - check for pending order confirmation
-            elif pending_order and any(word in user_lower for word in ['yes', 'confirm', 'ok', 'yep', 'sure', 'proceed']):
-                # User is confirming an order
-                if not token:
-                    delete_from_redis(user_id, 'pending_order')
-                    response_text = "🔒 **Authentication Required!**\n\nTo place this order, please log in using the button in the top right corner. 🙂"
-                else:
-                    try:
-                        response_text = place_order(
-                            restaurant_name=pending_order['restaurant_name'],
-                            items=pending_order['items'],
-                            token=token
-                        )
-                        delete_from_redis(user_id, 'pending_order')
-                    except Exception as e:
-                        response_text = f"❌ Error placing order: {str(e)}"
-                        delete_from_redis(user_id, 'pending_order')
-            
-            elif pending_order and any(word in user_lower for word in ['no', 'cancel', 'nope', 'nevermind']):
-                # User is cancelling
-                delete_from_redis(user_id, 'pending_order')
-                response_text = "✅ **Order Cancelled**\n\nNo problem! Your order has been cancelled. 😊\n\n💡 Let me know if you'd like to order something else!"
-            
-            # Thanks/gratitude
-            elif any(word in user_lower for word in ['thanks', 'thank you', 'appreciate']):
-                response_text = "You're very welcome! 😊 I'm always here to help! 🍽️"
-            
-            # Default response - be helpful
-            if not response_text:
-                response_text = f"I understand you're asking about: '{user_message}'. I can help you find restaurants, browse menus, and place orders! Try asking:\n\n• 'Show all restaurants'\n• 'Find Gujarati food'\n• 'Tell me about Swati Snacks'\n• 'Where can I find bhel?'\n\nWhat would you like to do? 🍽️"
-            
-            # Limit session history to prevent memory issues
-            if len(chat_sessions[user_id]) > MAX_SESSION_MESSAGES:
-                chat_sessions[user_id] = chat_sessions[user_id][-MAX_SESSION_MESSAGES:]
-            
-            # Add response to history
-            chat_sessions[user_id].append({
-                "role": "model",
-                "parts": [response_text]
-            })
-            
-            return jsonify({
-                "response": response_text,
-                "ai_model": "ollama"
-            })
-        
-        # ==================== GEMINI PATH: Function Calling ====================
         # Start chat with history
         chat = model.start_chat(history=chat_sessions[user_id][:-1])
         
@@ -2112,4 +1879,3 @@ if __name__ == '__main__':
         import traceback
         traceback.print_exc()
         input("Press Enter to exit...")
-

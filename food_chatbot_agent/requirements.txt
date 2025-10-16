@@ -1,8 +1,100 @@
-flask==3.0.0
-flask-cors==4.0.0
-google-generativeai>=0.8.0
-requests==2.31.0
-python-dotenv==1.0.0
-python-jose[cryptography]==3.3.0
-redis==5.0.1
-waitress==2.1.2
+# ========================================================================
+# FoodieExpress Chatbot Agent v4.0 - Production Requirements
+# ========================================================================
+# Updated: October 2025
+# Compatible with: Python 3.10+
+# Docker-ready: Yes
+#
+# CHANGES FROM V3.0:
+# - Added pytest and testing dependencies
+# - Added tenacity for retry logic
+# - Added aiohttp for async operations
+# - Updated Flask and Redis versions
+# - Added logging enhancements
+# ========================================================================
+
+# ==================== CORE WEB FRAMEWORK ====================
+flask==3.0.0                    # Main web framework for agent server
+flask-cors==4.0.0               # Cross-Origin Resource Sharing support
+waitress==2.1.2                 # Production WSGI server (replaces Flask dev server)
+
+# ==================== HTTP & API COMMUNICATION ====================
+requests==2.31.0                # Synchronous HTTP client for backend API
+aiohttp==3.9.1                  # Asynchronous HTTP client for concurrent requests
+urllib3==2.1.0                  # HTTP library with retry support
+
+# ==================== RETRY LOGIC & RESILIENCE ====================
+tenacity==8.2.3                 # Retry library with exponential backoff
+backoff==2.2.1                  # Alternative retry decorator
+
+# ==================== ENVIRONMENT & CONFIGURATION ====================
+python-dotenv==1.0.0            # Load environment variables from .env files
+pydantic==2.5.0                 # Data validation and settings management
+
+# ==================== REDIS SESSION STORAGE ====================
+redis==5.0.1                    # Redis client for session/context storage
+hiredis==2.3.2                  # C parser for Redis (performance boost)
+
+# ==================== AUTHENTICATION & SECURITY ====================
+python-jose[cryptography]==3.3.0   # JWT token handling
+passlib[bcrypt]==1.7.4          # Password hashing
+cryptography==41.0.7            # Cryptographic recipes and primitives
+
+# ==================== AI/ML (OPTIONAL - for Gemini fallback) ====================
+google-generativeai==0.3.2      # Google Gemini AI SDK (optional, for fallback only)
+
+# ==================== TESTING FRAMEWORK ====================
+pytest==7.4.3                   # Testing framework
+pytest-asyncio==0.21.1          # Async support for pytest
+pytest-cov==4.1.0               # Coverage plugin for pytest
+pytest-mock==3.12.0             # Mocking plugin for pytest
+pytest-timeout==2.2.0           # Timeout plugin to prevent hanging tests
+
+# ==================== CODE QUALITY & LINTING ====================
+pylint==3.0.3                   # Code analysis and linting
+black==23.12.1                  # Code formatter
+mypy==1.7.1                     # Static type checker
+flake8==7.0.0                   # Style guide enforcement
+
+# ==================== UTILITIES ====================
+colorama==0.4.6                 # Colored terminal output (cross-platform)
+python-dateutil==2.8.2          # Date/time utilities
+pytz==2023.3                    # Timezone support
+
+# ==================== MONITORING & LOGGING ====================
+python-json-logger==2.0.7       # JSON structured logging
+
+# ==================== DATA PROCESSING ====================
+pandas==2.1.4                   # Data analysis (for test result analysis)
+tabulate==0.9.0                 # Pretty-print tabular data
+
+# ========================================================================
+# INSTALLATION INSTRUCTIONS:
+# ========================================================================
+# 
+# 1. Install all dependencies:
+#    pip install -r requirements.txt
+# 
+# 2. Install for development (includes testing tools):
+#    pip install -r requirements.txt
+# 
+# 3. Docker installation:
+#    Dependencies are automatically installed in Dockerfile
+# 
+# ========================================================================
+# OLLAMA SETUP (AI Model):
+# ========================================================================
+# 
+# Ollama runs as a separate service (NOT a Python package)
+# 
+# Installation:
+#   Windows: Download from https://ollama.ai/download
+#   Mac: brew install ollama
+#   Linux: curl -fsSL https://ollama.ai/install.sh | sh
+# 
+# Setup:
+#   1. Start Ollama: ollama serve
+#   2. Pull model: ollama pull llama3.2:3b
+#   3. Verify: curl http://localhost:11434/api/tags
+# 
+# ========================================================================

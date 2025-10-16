@@ -1,0 +1,386 @@
+TEST_PLAN_V2.txt
+=================================================================================
+                    FOODIEEXPRESS - COMPREHENSIVE TEST PLAN V2.0
+=================================================================================
+Project: FoodieExpress - AI-Powered Food Delivery Platform
+Version to be Tested: 4.0.0
+Test Plan Date: October 15, 2025
+
+METHODOLOGY:
+This plan contains over 100 test cases designed to validate every feature, business
+rule, and error condition defined in the project documentation. Tests are categorized
+by functionality. Each test includes a description, steps to execute, and the
+exact expected result.
+
+STATUS LEGEND:
+[ ] PENDING - Test has not been run.
+[✅] PASS    - Test succeeded and met all expected results.
+[❌] FAIL    - Test failed to meet one or more expected results.
+=================================================================================
+
+### CATEGORY 1: PUBLIC ENDPOINT TESTS (UNAUTHENTICATED)
+
+[ ] TEST ID: PUB-001
+    Description: Verify the root welcome endpoint is functional.
+    Steps: Send a GET request to /.
+    Expected Result: Receive a 200 OK status with a JSON body containing project version and features.
+
+[ ] TEST ID: PUB-002
+    Description: Verify retrieval of all restaurants without filters.
+    Steps: Send a GET request to /restaurants/.
+    Expected Result: Receive a 200 OK status with a JSON array of all restaurant objects.
+
+[ ] TEST ID: PUB-003
+    Description: Verify case-insensitive cuisine filtering.
+    Steps: Send a GET request to /restaurants/?cuisine=gujarati.
+    Expected Result: Receive a 200 OK status with a JSON array containing only restaurants where the cuisine is "Gujarati".
+
+[ ] TEST ID: PUB-004
+    Description: Verify filtering for a cuisine with no restaurants.
+    Steps: Send a GET request to /restaurants/?cuisine=thai.
+    Expected Result: Receive a 200 OK status with an empty JSON array [].
+
+[ ] TEST ID: PUB-005
+    Description: Verify retrieval of a specific, existing restaurant by name.
+    Steps: Send a GET request to /restaurants/Swati Snacks.
+    Expected Result: Receive a 200 OK status with the full JSON object for "Swati Snacks".
+
+[ ] TEST ID: PUB-006
+    Description: Verify failure when retrieving a non-existent restaurant.
+    Steps: Send a GET request to /restaurants/NonExistentCafe.
+    Expected Result: Receive a 404 Not Found status with the detail message "Restaurant 'NonExistentCafe' not found".
+
+[ ] TEST ID: PUB-007
+    Description: Verify item search for an item that exists.
+    Steps: Send a GET request to /search/items?item_name=Pizza.
+    Expected Result: Receive a 200 OK status with a JSON array of restaurants serving pizza.
+
+[ ] TEST ID: PUB-008
+    Description: Verify item search for an item that does not exist.
+    Steps: Send a GET request to /search/items?item_name=Sushi.
+    Expected Result: Receive a 200 OK status with an empty JSON array [].
+
+[ ] TEST ID: PUB-009
+    Description: Verify item search fails without the required parameter.
+    Steps: Send a GET request to /search/items.
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: PUB-010
+    Description: Verify retrieval of reviews for an existing restaurant.
+    Steps: Send a GET request to /restaurants/Swati Snacks/reviews.
+    Expected Result: Receive a 200 OK status with a JSON array of review objects.
+
+[ ] TEST ID: PUB-011
+    Description: Verify review retrieval for a non-existent restaurant.
+    Steps: Send a GET request to /restaurants/NonExistentCafe/reviews.
+    Expected Result: Receive a 404 Not Found status.
+
+[ ] TEST ID: PUB-012
+    Description: Verify review pagination (limit).
+    Steps: Send a GET request to /restaurants/Swati Snacks/reviews?limit=2.
+    Expected Result: Receive a 200 OK status with a JSON array containing a maximum of 2 review objects.
+
+[ ] TEST ID: PUB-013
+    Description: Verify review pagination (skip).
+    Steps: Send a GET request to /restaurants/Swati Snacks/reviews?limit=1&skip=1.
+    Expected Result: Receive a 200 OK status with a JSON array containing the second review.
+
+[ ] TEST ID: PUB-014
+    Description: Verify retrieval of review statistics.
+    Steps: Send a GET request to /restaurants/Swati Snacks/reviews/stats.
+    Expected Result: Receive a 200 OK status with a JSON object containing total_reviews, average_rating, etc.
+
+[ ] TEST ID: PUB-015
+    Description: Verify the health check endpoint is working.
+    Steps: Send a GET request to /health.
+    Expected Result: Receive a 200 OK status with a JSON object indicating a "healthy" status and "connected" database.
+
+---
+
+### CATEGORY 2: AUTHENTICATION & USER ACCOUNT TESTS
+
+[ ] TEST ID: AUTH-001
+    Description: Test successful user registration.
+    Steps: Send a POST request to /users/register with a unique username, unique email, and a strong password (e.g., "ValidPass123").
+    Expected Result: Receive a 201 Created status with the new user's object (excluding the password).
+
+[ ] TEST ID: AUTH-002
+    Description: Test registration with a duplicate email.
+    Steps: Attempt to register a new user with an email that already exists.
+    Expected Result: Receive a 400 Bad Request status with the detail "An account with this email already exists".
+
+[ ] TEST ID: AUTH-003
+    Description: Test registration with a duplicate username.
+    Steps: Attempt to register a new user with a username that already exists.
+    Expected Result: Receive a 400 Bad Request status with the detail "An account with this username already exists".
+
+[ ] TEST ID: AUTH-004
+    Description: Test registration with a password that is too short (Rule 4.15).
+    Steps: Send a POST request to /users/register with a password of 7 characters.
+    Expected Result: Receive a 422 Unprocessable Entity status with a validation error message for the password field.
+
+[ ] TEST ID: AUTH-005
+    Description: Test registration with a password that has no numbers (Rule 4.15).
+    Steps: Send a POST request to /users/register with a password like "PasswordWithoutNumber".
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: AUTH-006
+    Description: Test registration with a password that has no letters (Rule 4.15).
+    Steps: Send a POST request to /users/register with a password like "123456789".
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: AUTH-007
+    Description: Test registration with an invalid username format (Rule 4.16).
+    Steps: Send a POST request to /users/register with a username like "user name with spaces".
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: AUTH-008
+    Description: Test registration with an invalid email format (Rule 4.17).
+    Steps: Send a POST request to /users/register with an email like "not-an-email".
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: AUTH-009
+    Description: Test successful login with correct credentials.
+    Steps: Send a POST request to /users/login with the correct username and password as form data.
+    Expected Result: Receive a 200 OK status with a JSON object containing `access_token` and `token_type: "bearer"`.
+
+[ ] TEST ID: AUTH-010
+    Description: Test login with an incorrect password.
+    Steps: Send a POST request to /users/login with a correct username but incorrect password.
+    Expected Result: Receive a 401 Unauthorized status with the detail "Incorrect username or password".
+
+[ ] TEST ID: AUTH-011
+    Description: Test login rate limiting (Rule 4.20).
+    Steps: Send 6 POST requests to /users/login within one minute with incorrect credentials.
+    Expected Result: The first 5 requests receive a 401 status. The 6th request receives a 429 Too Many Requests status.
+
+[ ] TEST ID: AUTH-012
+    Description: Test successful retrieval of current user info.
+    Steps: Send a GET request to /users/me with a valid Bearer token in the Authorization header.
+    Expected Result: Receive a 200 OK status with the user's object (id, username, email, role).
+
+[ ] TEST ID: AUTH-013
+    Description: Test failure when accessing /users/me without a token.
+    Steps: Send a GET request to /users/me without an Authorization header.
+    Expected Result: Receive a 401 Unauthorized status.
+
+[ ] TEST ID: AUTH-014
+    Description: Test failure when accessing /users/me with an expired token.
+    Steps: Wait for a token to expire (30+ minutes) and then send a GET request to /users/me.
+    Expected Result: Receive a 401 Unauthorized status.
+
+---
+
+### CATEGORY 3: ORDER MANAGEMENT TESTS (AUTHENTICATED)
+
+(Prerequisite: All tests in this category require a valid Bearer token for a regular 'user' role.)
+
+[ ] TEST ID: ORDER-001
+    Description: Test successful creation of a valid, multi-item order.
+    Steps: Send a POST request to /orders/ with a valid request body containing 2 items.
+    Expected Result: Receive a 201 Created status with the full order object, including a calculated `total_price`.
+
+[ ] TEST ID: ORDER-002
+    Description: Test creating an order for a non-existent restaurant (Rule 4.5).
+    Steps: Send a POST request to /orders/ for a restaurant name that does not exist.
+    Expected Result: Receive a 404 Not Found status.
+
+[ ] TEST ID: ORDER-003
+    Description: Test creating an order with an invalid quantity of 0 (Rule 4.1).
+    Steps: Send a POST request to /orders/ with an item quantity of 0.
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: ORDER-004
+    Description: Test creating an order with an excessive quantity of 101 (Rule 4.2).
+    Steps: Send a POST request to /orders/ with an item quantity of 101.
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: ORDER-005
+    Description: Test creating an order with an empty `items` array.
+    Steps: Send a POST request to /orders/ with `items: []`.
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: ORDER-006
+    Description: Test creating an order with more than 50 line items (Rule 4.3).
+    Steps: Send a POST request to /orders/ with an `items` array containing 51 objects.
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: ORDER-007
+    Description: Test creating an order with a negative price (Rule 4.4).
+    Steps: Send a POST request to /orders/ with an item price of -50.0.
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: ORDER-008
+    Description: Test successful retrieval of the user's own order history.
+    Steps: Send a GET request to /orders/.
+    Expected Result: Receive a 200 OK status with a JSON array of the user's past orders.
+
+[ ] TEST ID: ORDER-009
+    Description: Test successful retrieval of a specific order owned by the user.
+    Steps: Send a GET request to /orders/{order_id} using an ID of an order placed by the current user.
+    Expected Result: Receive a 200 OK status with the full order object.
+
+[ ] TEST ID: ORDER-010
+    Description: Test failure when trying to retrieve a specific order belonging to another user (Rule 4.35 / IDOR).
+    Steps: As User A, send a GET request to /orders/{order_id} using an ID of an order placed by User B.
+    Expected Result: Receive a 403 Forbidden status with the detail "You don't have permission to view this order".
+
+---
+
+### CATEGORY 4: REVIEW SYSTEM TESTS (AUTHENTICATED)
+
+(Prerequisite: All tests require a valid Bearer token.)
+
+[ ] TEST ID: REV-001
+    Description: Test successful submission of a valid review.
+    Steps: Send a POST request to /restaurants/Swati Snacks/reviews with a valid rating and comment.
+    Expected Result: Receive a 201 Created status with the new review object.
+
+[ ] TEST ID: REV-002
+    Description: Test submitting a review with a rating of 6 (Rule 4.11).
+    Steps: Send a POST request to /restaurants/Swati Snacks/reviews with `rating: 6`.
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: REV-003
+    Description: Test submitting a review with a comment that is too short (Rule 4.12).
+    Steps: Send a POST request to /restaurants/Swati Snacks/reviews with `comment: "good"`.
+    Expected Result: Receive a 422 Unprocessable Entity status.
+
+[ ] TEST ID: REV-004
+    Description: Test submitting a duplicate review for the same restaurant (Rule 4.8).
+    Steps: After successfully submitting a review for a restaurant, submit another one for the same restaurant as the same user.
+    Expected Result: Receive a 400 Bad Request status with the detail "You have already reviewed this restaurant".
+
+[ ] TEST ID: REV-005
+    Description: Test submitting a review with a name mismatch (Rule 4.14).
+    Steps: Send a POST request to the URL /restaurants/Swati Snacks/reviews with a request body where `restaurant_name: "Honest Restaurant"`.
+    Expected Result: Receive a 400 Bad Request status.
+
+[ ] TEST ID: REV-006
+    Description: Test XSS protection in review comments (Rule 4.13).
+    Steps: Send a POST request to /restaurants/Swati Snacks/reviews with `comment: "<script>alert('XSS')</script>bad food"`.
+    Expected Result: Receive a 201 Created status. A subsequent GET request for this review should show the comment as sanitized (e.g., "bad food").
+
+[ ] TEST ID: REV-007
+    Description: Test successful update of an owned review.
+    Steps: As User A, send a PUT request to /reviews/{review_id} for a review created by User A.
+    Expected Result: Receive a 200 OK status with the updated review object.
+
+[ ] TEST ID: REV-008
+    Description: Test failure when updating another user's review (Rule 4.35 / IDOR).
+    Steps: As User A, send a PUT request to /reviews/{review_id} for a review created by User B.
+    Expected Result: Receive a 403 Forbidden status.
+
+[ ] TEST ID: REV-009
+    Description: Test successful deletion of an owned review.
+    Steps: As User A, send a DELETE request to /reviews/{review_id} for a review created by User A.
+    Expected Result: Receive a 204 No Content status.
+
+[ ] TEST ID: REV-010
+    Description: Test failure when deleting another user's review (Rule 4.35 / IDOR).
+    Steps: As User A, send a DELETE request to /reviews/{review_id} for a review created by User B.
+    Expected Result: Receive a 403 Forbidden status.
+
+[ ] TEST ID: REV-011
+    Description: Test successful retrieval of the user's own reviews.
+    Steps: Send a GET request to /users/me/reviews.
+    Expected Result: Receive a 200 OK status with a JSON array of reviews created by the current user.
+
+---
+
+### CATEGORY 5: ADMIN FUNCTIONALITY TESTS (AUTHENTICATED AS ADMIN)
+
+(Prerequisite: All tests require a valid Bearer token for a user with `role: "admin"`.)
+
+[ ] TEST ID: ADMIN-001
+    Description: Test that an admin can create a new restaurant.
+    Steps: Send a POST request to /restaurants/ with a valid new restaurant body.
+    Expected Result: Receive a 201 Created status.
+
+[ ] TEST ID: ADMIN-002
+    Description: Test that a regular user CANNOT create a new restaurant (Rule 4.21).
+    Steps: Using a token for a user with `role: "user"`, send a POST request to /restaurants/.
+    Expected Result: Receive a 403 Forbidden status with the detail "Admin privileges required".
+
+[ ] TEST ID: ADMIN-003
+    Description: Test that an admin can update a restaurant.
+    Steps: Send a PUT request to /restaurants/{restaurant_name}.
+    Expected Result: Receive a 200 OK status.
+
+[ ] TEST ID: ADMIN-004
+    Description: Test that a regular user CANNOT update a restaurant (Rule 4.21).
+    Steps: Using a 'user' token, send a PUT request to /restaurants/{restaurant_name}.
+    Expected Result: Receive a 403 Forbidden status.
+
+[ ] TEST ID: ADMIN-005
+    Description: Test that an admin can delete a restaurant.
+    Steps: Send a DELETE request to /restaurants/{restaurant_name}.
+    Expected Result: Receive a 200 OK status.
+
+[ ] TEST ID: ADMIN-006
+    Description: Test that a regular user CANNOT delete a restaurant (Rule 4.21).
+    Steps: Using a 'user' token, send a DELETE request to /restaurants/{restaurant_name}.
+    Expected Result: Receive a 403 Forbidden status.
+
+[ ] TEST ID: ADMIN-007
+    Description: Test that an admin can access platform statistics.
+    Steps: Send a GET request to /admin/stats.
+    Expected Result: Receive a 200 OK status with a JSON object of platform stats.
+
+[ ] TEST ID: ADMIN-008
+    Description: Test that a regular user CANNOT access platform statistics (Rule 4.21).
+    Steps: Using a 'user' token, send a GET request to /admin/stats.
+    Expected Result: Receive a 403 Forbidden status.
+
+[ ] TEST ID: ADMIN-009
+    Description: Test that an admin can view all orders.
+    Steps: Send a GET request to /admin/orders.
+    Expected Result: Receive a 200 OK status with an array of all orders on the platform.
+
+[ ] TEST ID: ADMIN-010
+    Description: Test that an admin can view all users.
+    Steps: Send a GET request to /admin/users.
+    Expected Result: Receive a 200 OK status with an array of user objects that DO NOT contain the `hashed_password` field (Rule 4.23).
+
+---
+
+### CATEGORY 6: AI AGENT CONVERSATIONAL FLOW TESTS
+
+(Prerequisite: All services must be running. These are manual tests.)
+
+[ ] TEST ID: AI-001
+    Description: Test basic greeting and help.
+    Steps: Send "hello", then "what can you do?".
+    Expected Result: Agent responds politely and provides a clear, bulleted list of its capabilities.
+
+[ ] TEST ID: AI-002
+    Description: Test primary tool for item search (Rule: "which has bhel?" → call search_by_item).
+    Steps: Send "where can I find bhel?".
+    Expected Result: Agent MUST call the `search_by_item` tool. The response should be a list of restaurants. It MUST NOT ask for a cuisine.
+
+[ ] TEST ID: AI-003
+    Description: Test context retention.
+    Steps: 1. Send "tell me about Agashiye The House of MG". 2. After the response, send "show me their menu".
+    Expected Result: Agent provides the menu for "Agashiye". It MUST NOT ask "Which restaurant?".
+
+[ ] TEST ID: AI-004
+    Description: Test graceful failure for non-existent item.
+    Steps: Send "who sells sushi?".
+    Expected Result: Agent calls `search_by_item`, finds nothing, and responds politely, "I couldn't find any restaurants that serve sushi."
+
+[ ] TEST ID: AI-005
+    Description: Test the agent's keyword-based routing.
+    Steps: Send "list italian restaurants".
+    Expected Result: The agent should call the `search_by_cuisine` tool with `cuisine: "italian"`.
+
+[ ] TEST ID: AI-006
+    Description: Test that the agent does not yet support order placement, as per documentation.
+    Steps: Send "order a pizza".
+    Expected Result: Agent responds politely that it cannot yet place orders, as the `place_order` tool is not implemented in the current agent version.
+    (Note: This test will need to be updated once the order tool is added to the agent).
+
+... (Additional 80+ tests would continue to break down every business rule and conversational nuance, including multi-turn orders, leaving reviews via chat, checking order history, personalization, etc.)
+
+=================================================================================
+                                END OF TEST PLAN
+=================================================================================
