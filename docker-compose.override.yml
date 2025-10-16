@@ -1,0 +1,220 @@
+# Docker Compose Override for Development Environment
+# This file automatically applies when running docker-compose in dev mode
+# It enables hot reload, debug mode, and developer-friendly settings
+#
+# Usage:
+#   docker-compose up          # Automatically uses this override
+#   docker-compose -f docker-compose.yml -f docker-compose.override.yml up
+#
+# To disable override (production mode):
+#   docker-compose -f docker-compose.yml up
+
+version: '3.8'
+
+services:
+  # ==================== AI CHATBOT AGENT (Development Mode) ====================
+  chatbot_agent:
+    # Mount source code as volume for hot reload
+    volumes:
+      - ./food_chatbot_agent:/app:rw
+      - ./food_chatbot_agent/logs:/app/logs:rw
+    
+    # Enable debug mode
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - FLASK_DEBUG=1
+      - FLASK_ENV=development
+      - PYTHONUNBUFFERED=1  # Show print statements immediately
+    
+    # Use development command with auto-reload
+    command: python app.py --debug --port 5000 --host 0.0.0.0
+    
+    # Restart policy for development
+    restart: unless-stopped
+    
+    # Labels for identification
+    labels:
+      - "app.environment=development"
+      - "app.hotreload=enabled"
+  
+  
+  # ==================== BACKEND API (Development Mode) ====================
+  food_api:
+    # Mount source code for hot reload
+    volumes:
+      - ./food_api:/app:rw
+    
+    environment:
+      - DEBUG=true
+      - RELOAD=true
+    
+    # Use uvicorn with auto-reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
+    
+    restart: unless-stopped
+    
+    labels:
+      - "app.environment=development"
+      - "app.hotreload=enabled"
+  
+  
+  # ==================== FRONTEND (Development Mode) ====================
+  chatbot_frontend:
+    # Mount source code for hot reload
+    volumes:
+      - ./chatbot_frontend/src:/app/src:rw
+      - ./chatbot_frontend/public:/app/public:rw
+      # - ./chatbot_frontend/node_modules:/app/node_modules:rw  # Uncomment if needed
+    
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000
+      - VITE_AGENT_URL=http://localhost:5000
+    
+    # Vite development server with HMR (Hot Module Replacement)
+    command: npm run dev -- --host 0.0.0.0
+    
+    restart: unless-stopped
+    
+    labels:
+      - "app.environment=development"
+      - "app.hotreload=enabled"
+  
+  
+  # ==================== MONGODB (Development Mode) ====================
+  mongodb:
+    # Mount data directory to persist data across restarts
+    volumes:
+      - mongodb_dev_data:/data/db
+      - ./food_api/scripts:/docker-entrypoint-initdb.d:ro
+    
+    # Expose MongoDB port for external tools (MongoDB Compass, etc.)
+    ports:
+      - "27017:27017"
+    
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=devpassword123
+      - MONGO_INITDB_DATABASE=foodie_db
+    
+    labels:
+      - "app.environment=development"
+  
+  
+  # ==================== REDIS (Development Mode) ====================
+  redis:
+    # Expose Redis port for external tools (RedisInsight, redis-cli, etc.)
+    ports:
+      - "6379:6379"
+    
+    # Enable persistence for development
+    command: redis-server --appendonly yes --appendfsync everysec
+    
+    volumes:
+      - redis_dev_data:/data
+    
+    labels:
+      - "app.environment=development"
+
+
+# ==================== ADDITIONAL DEV SERVICES ====================
+  
+  # Redis Commander (Web UI for Redis)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: foodie-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - foodie-network
+    restart: unless-stopped
+    labels:
+      - "app.environment=development"
+      - "app.tool=redis-ui"
+  
+  
+  # Mongo Express (Web UI for MongoDB)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: foodie-mongo-express
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=admin
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=devpassword123
+      - ME_CONFIG_MONGODB_URL=mongodb://admin:devpassword123@mongodb:27017/
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin
+    ports:
+      - "8082:8081"
+    depends_on:
+      - mongodb
+    networks:
+      - foodie-network
+    restart: unless-stopped
+    labels:
+      - "app.environment=development"
+      - "app.tool=mongo-ui"
+
+
+# ==================== VOLUMES ====================
+volumes:
+  mongodb_dev_data:
+    driver: local
+    labels:
+      - "app.environment=development"
+  
+  redis_dev_data:
+    driver: local
+    labels:
+      - "app.environment=development"
+
+
+# ==================== NETWORKS ====================
+networks:
+  foodie-network:
+    driver: bridge
+    labels:
+      - "app.environment=development"
+
+
+# ==================== DEVELOPMENT NOTES ====================
+# 
+# 1. HOT RELOAD:
+#    - Code changes automatically reload the server
+#    - No need to restart containers for code changes
+#    - Frontend has HMR (Hot Module Replacement)
+# 
+# 2. DEBUGGING:
+#    - All services run in debug mode
+#    - Verbose logging enabled
+#    - Stack traces shown on errors
+# 
+# 3. EXTERNAL ACCESS:
+#    - Backend API: http://localhost:8000/docs
+#    - Frontend: http://localhost:5173
+#    - Chatbot Agent: http://localhost:5000
+#    - MongoDB: mongodb://localhost:27017
+#    - Redis: redis://localhost:6379
+#    - Mongo Express: http://localhost:8082
+#    - Redis Commander: http://localhost:8081
+# 
+# 4. DATA PERSISTENCE:
+#    - MongoDB data persists in 'mongodb_dev_data' volume
+#    - Redis data persists in 'redis_dev_data' volume
+#    - To reset: docker-compose down -v
+# 
+# 5. PERFORMANCE:
+#    - Development mode is SLOWER than production
+#    - File watching adds overhead
+#    - Use production mode for performance testing
+# 
+# 6. SECURITY WARNINGS:
+#    - Default credentials (admin/devpassword123)
+#    - Debug mode exposes sensitive information
+#    - DO NOT USE IN PRODUCTION!
+# 
+# ==================== END ====================
