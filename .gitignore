@@ -66,6 +66,19 @@ logs/
 # Redis dump
 dump.rdb
 
+# Documentation files that might contain secrets (IMPORTANT!)
+# Prevent accidental commits of files with credentials
+*CONNECTION_SUCCESS*.md
+*_CREDENTIALS*.md
+*_SECRETS*.md
+*_PASSWORD*.md
+*_TOKEN*.md
+*_KEY*.md
+*_MONGODB*.md
+*_DATABASE*.md
+PRIVATE_*.md
+SECRET_*.md
+
 # Node.js / Frontend
 node_modules/
 npm-debug.log*
