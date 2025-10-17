@@ -22,6 +22,8 @@ class User(Document):
     username: str
     email: EmailStr
     hashed_password: str
+    first_name: str  # NEW: User's first name
+    last_name: str  # NEW: User's last name
     role: str = "user"  # NEW: Role-based access control ("user" or "admin")
 
     class Settings:

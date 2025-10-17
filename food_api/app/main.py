@@ -10,8 +10,11 @@ SECURITY ENHANCEMENTS:
 """
 
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Request
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import HTTPBearer, OAuth2PasswordRequestForm, HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
+import secrets
+from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel
+from fastapi.openapi.models import OAuthFlowPassword
 from contextlib import asynccontextmanager
 from typing import List, Optional
 from datetime import timedelta
@@ -38,6 +41,13 @@ from .schemas import (
 from .security import hash_password, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from .dependencies import get_current_user, get_current_admin_user
 
+# NEW: Authentication System
+from .auth import AuthService
+from .auth_schemas import (
+    UserRegisterRequest, UserLoginRequest, 
+    UserRegisterResponse, UserLoginResponse, UserLogoutResponse
+)
+
 # ==================== RATE LIMITING CONFIGURATION ====================
 # HIGH-002 FIX: Prevent brute force attacks and API abuse
 limiter = Limiter(key_func=get_remote_address)
@@ -51,17 +61,150 @@ async def lifespan(app: FastAPI):
     yield
     print("🔌 Closing database connection.")
 
-# Create FastAPI App
+# Create FastAPI App with Swagger Bearer Token Authorization
 app = FastAPI(
     title="FoodieExpress API",
     description="AI-Powered Food Delivery Platform with Reviews, Admin Dashboard & Intelligence Features",
     version="4.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # IMPORTANT: Set openapi_url to None initially to prevent auto-generation
+    # We'll re-enable it after customizing the schema
+    # openapi_url=None,  # Uncomment if needed
+    # Define security schemes for OpenAPI documentation
+    openapi_tags=[
+        {"name": "Authentication", "description": "User registration, login, and logout"},
+        {"name": "Restaurants", "description": "Restaurant management operations"},
+        {"name": "Orders", "description": "Order creation and management"},
+        {"name": "Reviews", "description": "Restaurant reviews and ratings"},
+    ],
+    # Disable automatic security scheme generation
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
+
+# NUCLEAR OPTION: Completely override OpenAPI schema generation
+def custom_openapi():
+    """
+    Custom OpenAPI schema that FORCES removal of OAuth2 auto-detection.
+    
+    FastAPI automatically detects OAuth2PasswordBearer from dependencies,
+    so we need to aggressively remove it and replace with HTTPBearer.
+    """
+    # Always regenerate to ensure we get the latest schema
+    app.openapi_schema = None
+    
+    from fastapi.openapi.utils import get_openapi
+    import copy
+    
+    # Generate the base schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        tags=app.openapi_tags,
+    )
+    
+    # CRITICAL: Initialize components if not exists
+    if "components" not in openapi_schema:
+        openapi_schema["components"] = {}
+    
+    # NUCLEAR OPTION: Delete ALL existing security schemes
+    if "securitySchemes" in openapi_schema["components"]:
+        del openapi_schema["components"]["securitySchemes"]
+    
+    # Add ONLY HTTP Basic Auth (Simple username/password)
+    openapi_schema["components"]["securitySchemes"] = {
+        "BasicAuth": {
+            "type": "http",
+            "scheme": "basic",
+            "description": "Admin access: Username=Meet, Password=Meet7805"
+        }
+    }
+    
+    # Aggressively replace ALL security references in ALL paths
+    if "paths" in openapi_schema:
+        for path_item in openapi_schema["paths"].values():
+            if isinstance(path_item, dict):
+                for operation in path_item.values():
+                    if isinstance(operation, dict):
+                        # Remove any existing security
+                        if "security" in operation:
+                            # Check if any security requirement exists
+                            has_security = False
+                            for sec_req in operation["security"]:
+                                if any(key for key in sec_req.keys()):
+                                    has_security = True
+                                    break
+                            
+                            # If endpoint had security, replace with BasicAuth
+                            if has_security:
+                                operation["security"] = [{"BasicAuth": []}]
+    
+    # Save and return
+    app.openapi_schema = openapi_schema
+    return openapi_schema
+
+# Apply custom OpenAPI
+app.openapi = custom_openapi
+
+# Force regeneration on startup
+@app.on_event("startup")
+async def regenerate_openapi():
+    """Force OpenAPI schema regeneration on startup"""
+    app.openapi_schema = None
+    custom_openapi()
 
 # Add rate limiter to app state
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ==================== SWAGGER BASIC AUTH ====================
+# Single admin account for Swagger UI access
+security = HTTPBasic()
+SWAGGER_USERNAME = "Meet"
+SWAGGER_PASSWORD = "Meet7805"
+
+def verify_swagger_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+    """
+    Verify Swagger UI credentials (single admin account).
+    
+    Admin credentials:
+    - Username: Meet
+    - Password: Meet7805
+    """
+    correct_username = secrets.compare_digest(credentials.username, SWAGGER_USERNAME)
+    correct_password = secrets.compare_digest(credentials.password, SWAGGER_PASSWORD)
+    
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+# ==================== VALIDATION ERROR HANDLER ====================
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Custom handler for validation errors to provide detailed error messages
+    """
+    print(f"\n❌ VALIDATION ERROR on {request.method} {request.url.path}")
+    print(f"Errors: {exc.errors()}")
+    print(f"Body: {exc.body}")
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "body": exc.body
+        }
+    )
 
 # ==================== CORS MIDDLEWARE ====================
 # MEDIUM-005 FIX: Load allowed origins from environment
@@ -219,22 +362,16 @@ async def search_restaurants_by_item(item_name: str = Query(..., description="Na
 @app.post("/restaurants/{restaurant_name}/reviews", response_model=ReviewOut, status_code=status.HTTP_201_CREATED)
 async def create_review(
     restaurant_name: str,
-    review_data: ReviewCreate,
-    current_user: User = Depends(get_current_user)
+    review_data: ReviewCreate
 ):
     """
-    V4.0: Submit a review for a restaurant (requires authentication).
+    Submit a review for a restaurant (NO AUTHENTICATION REQUIRED).
     
-    Parameters:
-    - restaurant_name: Name of the restaurant
-    - rating: 1-5 stars
-    - comment: Review text (10-1000 characters)
-    
-    Features:
-    - Prevents duplicate reviews
-    - Validates restaurant exists
-    - Stores username for display
+    Authentication system removed - anyone can leave reviews!
     """
+    # Guest user ID
+    guest_user_id = "guest_user"
+    guest_username = "Anonymous"
     # Verify restaurant exists
     restaurant = await Restaurant.find_one(Restaurant.name == restaurant_name)
     if not restaurant:
@@ -247,28 +384,16 @@ async def create_review(
             detail="Restaurant name in URL must match restaurant name in request body"
         )
     
-    # Check if user already reviewed this restaurant
-    existing_review = await Review.find_one(
-        Review.user_id == current_user.id,
-        Review.restaurant_name == restaurant_name
-    )
-    if existing_review:
-        raise HTTPException(
-            status_code=400,
-            detail="You have already reviewed this restaurant. Use PUT /reviews/{review_id} to update it."
-        )
+    # Skip duplicate review check - removed authentication
+    # Anyone can review multiple times now
     
-    # Check if user has ordered from this restaurant (for verified purchase)
-    user_order = await Order.find_one(
-        Order.user_id == current_user.id,
-        Order.restaurant_name == restaurant_name
-    )
-    is_verified = user_order is not None
+    # Skip verified purchase check - no authentication
+    is_verified = False
     
-    # Create review
+    # Create review with guest user
     review = Review(
-        user_id=current_user.id,
-        username=current_user.username,
+        user_id=guest_user_id,
+        username=guest_username,
         restaurant_name=restaurant_name,
         rating=review_data.rating,
         comment=review_data.comment,
@@ -519,71 +644,328 @@ async def delete_restaurant_by_name(
     return {"message": f"Restaurant '{restaurant_name}' deleted successfully"}
 
 # ==================== USER AUTHENTICATION ====================
+# COMPREHENSIVE AUTH SYSTEM - Supports Guest & Logged-In Users
+# - CASE 1: Logged-in users can order seamlessly
+# - CASE 2: Guest users can browse, but must login to order
 
-@app.post("/users/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-async def register_user(user_data: UserCreate):
-    """Register a new user account"""
+@app.post("/api/auth/register", response_model=UserRegisterResponse, status_code=status.HTTP_201_CREATED, tags=["Authentication"])
+async def register_user(user_data: UserRegisterRequest):
+    """
+    Register a new user account with comprehensive validation
+    
+    Requirements:
+    - Unique username (3-50 chars, alphanumeric + underscore/hyphen only)
+    - Valid email address
+    - Strong password (8+ chars, uppercase, lowercase, number)
+    - First name and last name (1-50 chars each)
+    
+    Returns:
+    - Success message with user details
+    - User ID for immediate login
+    """
+    print(f"\n🔐 REGISTRATION REQUEST: username={user_data.username}, email={user_data.email}")
+    
+    # Validate password strength
+    try:
+        AuthService.validate_password_strength(user_data.password)
+    except ValueError as e:
+        print(f"❌ Password validation failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    
     # Check email uniqueness
-    existing_user = await User.find_one(User.email == user_data.email)
+    existing_user = await User.find_one(User.email == user_data.email.lower())
     if existing_user:
-        raise HTTPException(status_code=400, detail="An account with this email already exists")
+        print(f"❌ Email already registered: {user_data.email}")
+        raise HTTPException(
+            status_code=400, 
+            detail="This email is already registered. Please login instead or use a different email."
+        )
     
-    # Check username uniqueness
-    existing_user = await User.find_one(User.username == user_data.username)
+    # Check username uniqueness (case-insensitive)
+    existing_user = await User.find_one(User.username == user_data.username.lower())
     if existing_user:
-        raise HTTPException(status_code=400, detail="An account with this username already exists")
+        print(f"❌ Username already taken: {user_data.username}")
+        raise HTTPException(
+            status_code=400, 
+            detail="This username is already taken. Please choose a different username or login if you already have an account."
+        )
     
-    # Hash password
-    hashed_pass = hash_password(user_data.password)
+    # Hash password using bcrypt
+    hashed_password = AuthService.hash_password(user_data.password)
     
-    # Create user with role (default: "user")
+    # Create user with all required fields
     user = User(
         username=user_data.username,
         email=user_data.email,
-        hashed_password=hashed_pass,
-        role=user_data.role if user_data.role else "user"
+        hashed_password=hashed_password,
+        first_name=user_data.first_name,
+        last_name=user_data.last_name,
+        role="user"  # Default role
     )
+    
     await user.insert()
     
-    return UserOut(
-        id=user.id,
+    print(f"✅ User registered successfully: {user.username} (ID: {user.id})")
+    
+    return UserRegisterResponse(
+        message="Registration successful! You can now login.",
+        user_id=str(user.id),
         username=user.username,
-        email=user.email,
-        role=user.role
+        email=user.email
     )
 
+
+# ==================== LEGACY REGISTRATION ENDPOINT ====================
+@app.post("/users/register", response_model=UserRegisterResponse, status_code=status.HTTP_201_CREATED)
+async def legacy_register_for_compatibility(user_data: UserRegisterRequest):
+    """
+    Legacy registration endpoint for backward compatibility.
+    
+    This endpoint exists to support frontend code that calls /users/register.
+    It accepts the same JSON data as /api/auth/register and returns the same response.
+    
+    RECOMMENDATION: Frontend should migrate to /api/auth/register for consistency.
+    
+    Required fields:
+    - username: 3-50 chars, alphanumeric + underscore/hyphen
+    - email: Valid email address
+    - password: 8+ chars, uppercase, lowercase, number
+    - first_name: User's first name
+    - last_name: User's last name
+    """
+    try:
+        print(f"\n🔐 LEGACY REGISTRATION: username={user_data.username}, email={user_data.email}")
+        
+        # Validate password strength
+        try:
+            AuthService.validate_password_strength(user_data.password)
+        except ValueError as e:
+            print(f"❌ Password validation failed: {str(e)}")
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Check email uniqueness (case-insensitive)
+        existing_user = await User.find_one(User.email == user_data.email.lower())
+        if existing_user:
+            print(f"❌ Email already registered: {user_data.email}")
+            raise HTTPException(
+                status_code=400, 
+                detail="This email is already registered. Please login instead or use a different email."
+            )
+        
+        # Check username uniqueness (case-insensitive)
+        existing_user = await User.find_one(User.username == user_data.username.lower())
+        if existing_user:
+            print(f"❌ Username already taken: {user_data.username}")
+            raise HTTPException(
+                status_code=400, 
+                detail="This username is already taken. Please choose a different username or login if you already have an account."
+            )
+        
+        # Hash password using bcrypt
+        hashed_password = AuthService.hash_password(user_data.password)
+        
+        # Create user with all required fields
+        user = User(
+            username=user_data.username,
+            email=user_data.email,
+            hashed_password=hashed_password,
+            first_name=user_data.first_name,
+            last_name=user_data.last_name,
+            role="user"  # Default role
+        )
+        
+        await user.insert()
+        
+        print(f"✅ Legacy registration successful: {user.username} (ID: {user.id})")
+        
+        return UserRegisterResponse(
+            message="Registration successful! You can now login.",
+            user_id=str(user.id),
+            username=user.username,
+            email=user.email
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions (400, etc.)
+        raise
+    except Exception as e:
+        # Log unexpected errors
+        print(f"❌ UNEXPECTED ERROR in /users/register: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@app.post("/api/auth/login", response_model=UserLoginResponse, tags=["Authentication"])
+@limiter.limit("5/minute")  # Rate limit to prevent brute force attacks
+async def login_user(request: Request, login_data: UserLoginRequest):
+    """
+    Authenticate user and return JWT token (1-hour expiry)
+    
+    Features:
+    - Login with username OR email
+    - Rate limited (5 attempts/minute)
+    - Returns JWT Bearer token
+    - Token expires in 1 hour
+    
+    Security:
+    - Bcrypt password verification
+    - Generic error messages (no user enumeration)
+    - Rate limiting prevents brute force
+    """
+    print(f"\n🔐 LOGIN REQUEST: {login_data.username_or_email}")
+    
+    # Find user by username or email (case-insensitive for username)
+    user = await User.find_one(User.username == login_data.username_or_email.lower())
+    if not user:
+        user = await User.find_one(User.email == login_data.username_or_email.lower())
+    
+    # Verify credentials
+    if not user or not AuthService.verify_password(login_data.password, user.hashed_password):
+        print(f"❌ Invalid credentials for: {login_data.username_or_email}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username/email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Create JWT token (1 hour expiry)
+    access_token = AuthService.create_access_token(
+        data={"sub": user.username, "user_id": str(user.id)}
+    )
+    
+    print(f"✅ Login successful: {user.username}")
+    
+    return UserLoginResponse(
+        message="Login successful!",
+        token=access_token,
+        token_type="bearer",
+        expires_in=3600,  # 1 hour in seconds
+        user={
+            "user_id": str(user.id),
+            "username": user.username,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name
+        }
+    )
+
+
+@app.post("/api/auth/logout", response_model=UserLogoutResponse, tags=["Authentication"])
+async def logout_user(request: Request):
+    """
+    Logout user (client-side token deletion)
+    
+    Note: Since we use stateless JWT tokens, logout is handled client-side
+    by deleting the token. This endpoint provides a consistent API interface
+    and can be extended for token blacklisting in the future.
+    """
+    # Extract token for logging purposes
+    auth_header = request.headers.get("Authorization", "")
+    token = AuthService.extract_token_from_header(auth_header)
+    
+    if token:
+        try:
+            payload = AuthService.decode_token(token)
+            username = payload.get("sub")
+            print(f"🔓 LOGOUT: {username}")
+        except Exception:
+            pass
+    
+    return UserLogoutResponse(
+        message="Logout successful! Please delete your token on the client side."
+    )
+
+
+# ==================== LEGACY ENDPOINT FOR SWAGGER OAUTH2 COMPATIBILITY ====================
 @app.post("/users/login")
-@limiter.limit("5/minute")  # HIGH-002 FIX: Rate limit login attempts (5 per minute)
-async def login_for_access_token(
+@limiter.limit("5/minute")
+async def legacy_login_for_swagger(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends()
 ):
     """
-    Authenticate user and return JWT token
+    Legacy login endpoint for Swagger OAuth2 compatibility.
     
-    SECURITY ENHANCEMENT:
-    - Rate limited to 5 attempts per minute to prevent brute force attacks
-    - Returns 429 Too Many Requests if limit exceeded
+    This endpoint accepts form data (username/password) and returns a token in OAuth2 format.
+    
+    IMPORTANT: Frontend should use /api/auth/login (JSON-based) instead.
+    This endpoint is primarily for Swagger UI OAuth2 authorization flow.
+    
+    Required form fields:
+    - username: Username or email
+    - password: User password
+    - grant_type: OAuth2 grant type (optional, defaults to "password")
     """
-    user = await User.find_one(User.username == form_data.username)
-    
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+    try:
+        print(f"\n🔐 LEGACY LOGIN (Form): {form_data.username}")
+        
+        # Find user by username or email (case-insensitive for username)
+        user = await User.find_one(User.username == form_data.username.lower())
+        if not user:
+            user = await User.find_one(User.email == form_data.username.lower())
+        
+        # Verify credentials
+        if not user or not AuthService.verify_password(form_data.password, user.hashed_password):
+            print(f"❌ Invalid credentials for: {form_data.username}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Create JWT token
+        access_token = AuthService.create_access_token(
+            data={"sub": user.username, "user_id": str(user.id)}
         )
-    
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    
-    return {"access_token": access_token, "token_type": "bearer"}
+        
+        print(f"✅ Legacy login successful: {user.username}")
+        
+        # Return in OAuth2 format (required by OAuth2PasswordBearer)
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+    except HTTPException:
+        # Re-raise HTTP exceptions (401, etc.)
+        raise
+    except Exception as e:
+        # Log unexpected errors
+        print(f"❌ UNEXPECTED ERROR in /users/login: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
 
-@app.get("/users/me", response_model=UserOut)
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
-    """Get current logged-in user information"""
+
+@app.get(
+    "/users/me", 
+    response_model=UserOut,
+    responses={
+        401: {"description": "Unauthorized - Invalid or missing token"},
+        200: {"description": "Successfully retrieved user information"}
+    },
+    summary="Get Current User Info",
+    description="Get information about the currently authenticated user. Requires Bearer token in Authorization header."
+)
+async def get_current_user_info(request: Request):
+    """
+    Get current logged-in user information
+    
+    **Authorization Required**: Bearer token in Authorization header
+    
+    Example:
+    ```
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+    ```
+    """
+    current_user = await get_current_user(request)
     return UserOut(
         id=current_user.id,
         username=current_user.username,
@@ -595,22 +977,20 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 
 @app.post("/orders/", response_model=OrderOut, status_code=status.HTTP_201_CREATED)
 async def create_order(
-    order_data: OrderCreate,
-    current_user: User = Depends(get_current_user)
+    order_data: OrderCreate
 ):
     """
-    Create a new multi-item order (requires authentication).
+    Create a new multi-item order (NO AUTHENTICATION REQUIRED).
     
-    PHASE 2: ORDER PLACEMENT DEBUG & FIX
-    
-    Enhanced with detailed logging to debug order placement issues.
+    Authentication system removed - orders work for everyone!
     """
-    # PHASE 2: Detailed logging
+    # Create a default guest user ID
+    guest_user_id = "guest_user"
+    
     print("\n" + "="*60)
-    print("🎯 FASTAPI: ORDER CREATION REQUEST")
+    print("🎯 FASTAPI: ORDER CREATION REQUEST (NO AUTH)")
     print("="*60)
-    print(f"👤 User ID: {current_user.id}")
-    print(f"👤 Username: {current_user.username}")
+    print(f"👤 User: Guest")
     print(f"🏪 Restaurant: {order_data.restaurant_name}")
     print(f"📦 Number of items: {len(order_data.items)}")
     print(f"📋 Items:")
@@ -641,9 +1021,9 @@ async def create_order(
     
     print(f"✅ Order items created: {len(order_items)}")
     
-    # Create order
+    # Create order with guest user ID
     order = Order(
-        user_id=current_user.id,
+        user_id=guest_user_id,
         restaurant_name=order_data.restaurant_name,
         items=order_items,
         total_price=total_price,

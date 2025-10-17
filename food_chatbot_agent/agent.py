@@ -225,8 +225,10 @@ def delete_from_redis(user_id: str, key: Optional[str] = None):
 
 # Define functions that Gemini AI can call
 # NOTE: Type checking disabled for google.generativeai - package lacks type stubs
-function_declarations = [  # type: ignore[misc]
-    genai.protos.FunctionDeclaration(  # type: ignore
+# ONLY define these when using Gemini (not Ollama)
+if not USE_OLLAMA and genai:
+    function_declarations = [  # type: ignore[misc]
+        genai.protos.FunctionDeclaration(  # type: ignore
         name="get_all_restaurants",
         description="REQUIRED: Get complete list of ALL restaurants with name, location, and cuisine. MUST be called when user asks to: list, show, see, browse, get, display, or find restaurants (any variation). DO NOT respond without calling this function for restaurant lists.",
         parameters=genai.protos.Schema(  # type: ignore
@@ -480,10 +482,14 @@ function_declarations = [  # type: ignore[misc]
             required=["token"]
         )
     )
-]
+    ]
 
-# Create tool config
-tools = genai.protos.Tool(function_declarations=function_declarations)
+    # Create tool config
+    tools = genai.protos.Tool(function_declarations=function_declarations)
+else:
+    # Ollama doesn't use function declarations
+    function_declarations = None
+    tools = None
 
 # ==================== API HELPER FUNCTIONS ====================
 
@@ -765,7 +771,7 @@ def get_restaurant_cuisine(restaurant_name: str, user_id: str = "guest") -> str:
         return f"❌ Error: {str(e)}"
 
 
-def prepare_order_for_confirmation(user_id: str, restaurant_name: str, items: List[Dict[str, Any]]) -> str:
+def prepare_order_for_confirmation(user_id: str, restaurant_name: str, items: List[Dict[str, Any]], is_authenticated: bool = False) -> str:
     """
     V4.0: Prepare order for user confirmation.
     
@@ -777,6 +783,7 @@ def prepare_order_for_confirmation(user_id: str, restaurant_name: str, items: Li
         user_id: User identifier
         restaurant_name: Name of the restaurant
         items: List of items with item_name, quantity, and price
+        is_authenticated: Whether the user is logged in (optional, for better UX messaging)
     
     Returns:
         Formatted confirmation message with total price
@@ -806,9 +813,15 @@ def prepare_order_for_confirmation(user_id: str, restaurant_name: str, items: Li
             result += f"  • {item['item_name']} × {item['quantity']} = ₹{item_total}\n"
         
         result += f"\n💰 **Total: ₹{total_price:.2f}**\n\n"
-        result += "✅ **Would you like to confirm this order?**\n"
-        result += "   Say 'yes', 'confirm', 'ok', or 'yep' to proceed!\n"
-        result += "   Say 'no' or 'cancel' to cancel this order."
+        result += "✅ **Ready to place your order?**\n"
+        
+        # Different messaging based on auth status
+        if is_authenticated:
+            result += "   Just say **'yes'** or **'confirm'** and I'll place it right away! 🚀\n"
+        else:
+            result += "   Say **'yes'** or **'confirm'** to proceed (you'll need to log in first)\n"
+        
+        result += "   Say **'no'** or **'cancel'** if you want to change anything."
         
         return result
         
@@ -1216,21 +1229,12 @@ def chat():
         user_message = data.get('message', '')
         user_id = data.get('user_id', 'guest')
         
-        # PHASE 1.2: Extract token from Authorization header (preferred) or body (fallback)
-        # This is the KEY to seamless authentication!
+        # PHASE 1.2: Extract token from Authorization header (NO LONGER NEEDED - AUTH REMOVED)
+        # Authentication system has been completely removed
         auth_header = request.headers.get('Authorization', '')
-        token = None
+        token = None  # Always None - no authentication
         
-        if auth_header and auth_header.startswith('Bearer '):
-            # Extract token from "Bearer <token>" format
-            token = auth_header.split('Bearer ')[1].strip()
-            app.logger.info(f"🔐 Token extracted from Authorization header for user: {user_id}")
-        elif data.get('token'):
-            # Fallback: token in request body (backward compatibility)
-            token = data.get('token')
-            app.logger.info(f"🔐 Token extracted from request body for user: {user_id}")
-        else:
-            app.logger.info(f"🔓 No token found - user is not authenticated: {user_id}")
+        app.logger.info(f"� No authentication required - processing as guest")
         
         if not user_message:
             return jsonify({"error": "Message is required"}), 400
@@ -1304,8 +1308,13 @@ Ready to order some delicious food? Let me know what you're craving! 🍽️"""
                 app.logger.error(f"❌ V4.0: Error generating personalized greeting: {e}")
                 # Fall back to normal chat flow if personalization fails
         
-        # If we have a personalized greeting, return it immediately
-        if personalized_greeting:
+        # If we have a personalized greeting, return it ONLY if user is just saying hi/hello
+        # Don't show greeting if user is asking for specific actions (list, order, search, etc.)
+        action_keywords = ['list', 'show', 'order', 'find', 'search', 'get', 'tell', 'menu', 'cuisine', 'review', 'history']
+        user_lower_check = user_message.lower()
+        has_action_request = any(keyword in user_lower_check for keyword in action_keywords)
+        
+        if personalized_greeting and not has_action_request:
             chat_sessions[user_id].append({
                 "role": "user",
                 "parts": [user_message]
@@ -1337,10 +1346,10 @@ Ready to order some delicious food? Let me know what you're craving! 🍽️"""
             if any(keyword in user_message_lower for keyword in confirmation_keywords):
                 app.logger.info(f"✅ V4.0: User confirmed order - executing place_order")
                 
-                # Check if user is authenticated
+                # IMPROVED AUTH CHECK: Only require login if user is NOT already authenticated
                 if not token:
                     delete_from_redis(user_id, 'pending_order')
-                    confirmation_response = "🔒 **Authentication Required!**\n\nTo place this order, please log in using the button in the top right corner. 🙂"
+                    confirmation_response = "🔒 **Login Required to Place Order**\n\nTo complete this order, please log in or create an account using the **Login** button in the top right corner.\n\n✨ Once logged in, I'll remember you and you can order anytime without logging in again! �"
                     
                     chat_sessions[user_id].append({"role": "user", "parts": [user_message]})
                     chat_sessions[user_id].append({"role": "model", "parts": [confirmation_response]})
@@ -1518,10 +1527,11 @@ Choose the right tool for efficiency!
 6. **Smart Search** 🎯: Gujarati, Italian, South Indian, Multi-cuisine, Cafe
 
 ⚠️ CRITICAL: SEAMLESS AUTHENTICATION (Phase 1.3)
-**NEVER ASK AUTHENTICATED USERS TO LOG IN!**
-- If token provided → User IS logged in
-- Proceed immediately with their action
-- NEVER ask for username/password again
+**SMART AUTHENTICATION - DON'T ANNOY LOGGED-IN USERS!**
+- If token provided → User IS ALREADY logged in → Proceed immediately!
+- If NO token → User is browsing as guest → Ask to login only when placing order
+- NEVER ask authenticated users to provide token/username/password again!
+- For guests: Only prompt login when they try to place an order (not when browsing)
 
 ⚠️ CRITICAL: V4.0 ORDER CONFIRMATION (TWO-STEP PROCESS)
 **ALWAYS CONFIRM BEFORE PLACING ORDERS!**
@@ -1619,10 +1629,19 @@ Make every interaction delightful! 🍽️✨"""
         # ==================== CRITICAL FIX: FORCE FUNCTION CALLING FOR LIST REQUESTS ====================
         # Pre-detect list requests and directly call the function, bypassing AI decision
         user_message_lower = user_message.lower()
-        list_keywords = ['list', 'show all', 'browse', 'see all', 'get all', 'display all', 'all restaurant']
         
-        if any(keyword in user_message_lower for keyword in list_keywords) and 'restaurant' in user_message_lower:
+        # Check for restaurant list requests
+        list_patterns = [
+            'list all restaurant', 'list restaurant', 'show all restaurant', 'show restaurant',
+            'browse restaurant', 'see all restaurant', 'get all restaurant', 'display all restaurant',
+            'all restaurant', 'get restaurant', 'display restaurant'
+        ]
+        
+        is_list_request = any(pattern in user_message_lower for pattern in list_patterns)
+        
+        if is_list_request:
             app.logger.info(f"🎯 DETECTED LIST REQUEST - Directly calling get_all_restaurants() without AI")
+            app.logger.info(f"   User message: {user_message}")
             
             # Call the function directly
             function_result = get_all_restaurants()
@@ -1841,6 +1860,11 @@ Make every interaction delightful! 🍽️✨"""
             if function_name in context_aware_functions and 'user_id' not in function_args:
                 function_args['user_id'] = user_id
                 app.logger.info(f"🔥 V4.0 TASK 1: Injecting user_id={user_id} for context-aware function {function_name}")
+            
+            # IMPROVED: Add authentication status to prepare_order_for_confirmation
+            if function_name == 'prepare_order_for_confirmation':
+                function_args['is_authenticated'] = bool(token)
+                app.logger.info(f"🔐 Injecting is_authenticated={bool(token)} for order preparation")
             
             # Execute the actual Python function
             if function_name not in available_functions:

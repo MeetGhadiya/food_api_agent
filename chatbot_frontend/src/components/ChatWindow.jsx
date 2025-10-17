@@ -2,20 +2,17 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, RefreshCw, X, Loader2 } from 'lucide-react';
 import Message from './Message';
 import chatAPI from '../services/api';
-import authService from '../services/auth';
 
 const ChatWindow = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState([
     {
-      text: "👋 Hi! I'm your AI food delivery assistant.\n\n🏪 Browse restaurants\n🍕 Order food\n📝 Check your orders\n\nWhat would you like to do?",
+      text: "👋 Hi! I'm your AI food delivery assistant.\n\n🏪 Browse restaurants\n🍕 Order food\n📝 Leave reviews\n\nWhat would you like to do?",
       isBot: true,
     },
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
-  const [currentUser, setCurrentUser] = useState(authService.getUser());
-  const [userId, setUserId] = useState(() => authService.getUser() || 'guest_' + Date.now());
+  const [userId] = useState('guest_' + Date.now()); // Simple guest ID
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -33,21 +30,7 @@ const ChatWindow = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
-  // Update auth status when window opens
-  useEffect(() => {
-    if (isOpen) {
-      const authenticated = authService.isAuthenticated();
-      const user = authService.getUser();
-      
-      setIsAuthenticated(authenticated);
-      setCurrentUser(user);
-      
-      // Update userId if user is logged in
-      if (user) {
-        setUserId(user);
-      }
-    }
-  }, [isOpen]);
+  // Removed auth status update - no authentication needed
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -61,32 +44,16 @@ const ChatWindow = ({ isOpen, onClose }) => {
     setIsLoading(true);
 
     try {
-      // Get fresh auth data on EVERY message
-      const token = authService.getToken();
-      const currentUserId = authService.getUser() || userId;
-      
-      console.log('🔍 DEBUG - Token from localStorage:', token ? `${token.substring(0, 20)}...` : 'NULL');
-      console.log('🔍 DEBUG - Is Authenticated:', authService.isAuthenticated());
-      console.log('🔍 DEBUG - User ID being sent:', currentUserId);
-      
-      const response = await chatAPI.sendMessage(message, currentUserId, token);
+      // No authentication - send message without token
+      const response = await chatAPI.sendMessage(message, userId, null);
       console.log('🔍 DEBUG - Response:', response);
 
-      // Handle authentication response
-      if (response.token) {
-        // Extract username from the message or use userId
-        const username = userId.startsWith('guest_') ? 'user' : userId;
-        authService.setAuth(response.token, username);
-        setIsAuthenticated(true);
-        setCurrentUser(username);
-      }
-
-      // Check if response requires auth
+      // Handle authentication response (should not happen now, but keep for safety)
       if (response.requires_auth) {
         setMessages((prev) => [
           ...prev,
           { 
-            text: "🔒 I can help with that! But first, I need you to log in or register.\n\nPlease use the **Login** button in the website header (top right corner).", 
+            text: "ℹ️ This feature works without login! Just continue chatting.", 
             isBot: true 
           },
         ]);
@@ -143,7 +110,7 @@ const ChatWindow = ({ isOpen, onClose }) => {
             <h3 className="font-semibold text-lg">FoodieBot</h3>
             <p className="text-xs text-white/80 flex items-center gap-1">
               <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-              {isAuthenticated ? `Logged in as ${currentUser}` : 'Online'}
+              Online - No login required!
             </p>
           </div>
         </div>

@@ -1,89 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import ChatBot from './components/ChatBot';
-import { Utensils, MessageCircle, Sparkles, Zap, User, LogOut } from 'lucide-react';
-import authService from './services/auth';
+import { Utensils, MessageCircle, Sparkles, Zap } from 'lucide-react';
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
-  const [currentUser, setCurrentUser] = useState(authService.getUser());
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [formData, setFormData] = useState({ username: '', email: '', password: '' });
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    setIsAuthenticated(authService.isAuthenticated());
-    setCurrentUser(authService.getUser());
-  }, []);
+  // Authentication system removed - app now works without login
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      const response = await fetch('http://localhost:8000/users/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          username: formData.username,
-          password: formData.password,
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (response.ok && data.access_token) {
-        authService.setAuth(data.access_token, formData.username);
-        setIsAuthenticated(true);
-        setCurrentUser(formData.username);
-        setShowLoginModal(false);
-        setFormData({ username: '', email: '', password: '' });
-      } else {
-        setError('Invalid credentials. Please try again.');
-      }
-    } catch (err) {
-      setError('Login failed. Please check if the server is running.');
-    } finally {
-      setLoading(false);
-    }
+    // Login system removed
   };
 
   const handleRegister = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      const response = await fetch('http://localhost:8000/users/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: formData.username,
-          email: formData.email,
-          password: formData.password,
-        }),
-      });
-
-      if (response.ok) {
-        // Auto-login after registration
-        handleLogin(e);
-      } else {
-        const data = await response.json();
-        setError(data.detail || 'Registration failed. Username might be taken.');
-      }
-    } catch (err) {
-      setError('Registration failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    // Registration system removed
   };
 
   const handleLogout = () => {
-    authService.logout();
-    setIsAuthenticated(false);
-    setCurrentUser(null);
+    // Logout system removed
   };
 
   return (
@@ -104,127 +35,12 @@ function App() {
               AI-Powered Food Ordering
             </span>
             
-            {/* Login/Logout Buttons */}
-            {isAuthenticated ? (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-full">
-                  <User className="w-4 h-4" />
-                  <span className="text-sm font-medium">{currentUser}</span>
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-full hover:bg-red-100 transition"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span className="text-sm font-medium">Logout</span>
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowLoginModal(true)}
-                className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-full hover:shadow-lg transition font-medium"
-              >
-                <User className="w-4 h-4" />
-                Login
-              </button>
-            )}
+            {/* Login/Logout buttons removed - no authentication needed */}
           </div>
         </div>
       </header>
 
-      {/* Login/Register Modal */}
-      {showLoginModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative">
-            <button
-              onClick={() => {
-                setShowLoginModal(false);
-                setError('');
-                setFormData({ username: '', email: '', password: '' });
-              }}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-            >
-              ✕
-            </button>
-
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">
-              {isRegistering ? 'Create Account' : 'Welcome Back'}
-            </h2>
-
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={isRegistering ? handleRegister : handleLogin}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Username
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.username}
-                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                    required
-                  />
-                </div>
-
-                {isRegistering && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                      required
-                    />
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                    required
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full mt-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg font-medium hover:shadow-lg transition disabled:opacity-50"
-              >
-                {loading ? 'Please wait...' : (isRegistering ? 'Create Account' : 'Login')}
-              </button>
-            </form>
-
-            <div className="mt-4 text-center">
-              <button
-                onClick={() => {
-                  setIsRegistering(!isRegistering);
-                  setError('');
-                  setFormData({ username: '', email: '', password: '' });
-                }}
-                className="text-orange-600 hover:text-orange-700 text-sm font-medium"
-              >
-                {isRegistering ? 'Already have an account? Login' : "Don't have an account? Register"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Login/Register Modal removed - no authentication needed */}
 
       {/* Hero Section - Clean & Modern */}
       <div className="container mx-auto px-6 py-16 md:py-24">
